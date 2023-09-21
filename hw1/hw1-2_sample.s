@@ -64,5 +64,69 @@ __start:
   # Do store 66048(0x10200) into x20 
   # ex. j print_char
   
+main:
+    # Initialize x20 to the start of the ciphertext buffer (0x10200)
+    li x20, 0x10200
+    addi s0, x0, 48     # s0 = 0，用來當 space 計數器。ascii 48 = '0'
+
+    addi t1, x0, 10
+    addi t2, x0, 32
+    addi t3, x0, 97
+    addi t4, x0, 123
+    # Loop through the plaintext string
+loop:
+    lbu s1, 0(a0)         # Load a character from plaintext
+    beqz s1, done         # If it's null terminator, we are done
+    beq s1, t1, done     # If it's newline, we are done
+
+    beq s1, t2, space     # If it's space, we need to count it
+
+    add s1, s1, a6      # shift the character
+    bge s1, t4, bigger  # 如果shift後的值大於等於123，就到bigger去計算
+    blt s1, t3, smaller # 如果shift後的值小於97，就到smaller去計算
+
+    sb s1, 0(x20)        # Store the encrypted character in the ciphertext buffer
+    addi x20, x20, 1     # Increment the ciphertext buffer pointer
+    addi a0, a0, 1       # Increment the plaintext buffer pointer
+    j loop               # Repeat the loop
+
+space:   # 如果是空格就用計數值
+    sb s0, 0(x20)        # 把 space 計數值存到 ciphertext buffer
+    addi x20, x20, 1    
+    addi a0, a0, 1       
+    addi s0, s0, 1       # Increment the space counter
+    j loop               # Repeat the loop
+
+bigger:
+    addi t5, x0, 122      
+    sub s1, s1, t5       # shift後超過邊界(z=122)多少
+    addi s1, s1, 96       # a=97，所以 超過的值+96 = shift後的值
+    sb s1, 0(x20)        
+    addi x20, x20, 1     
+    addi a0, a0, 1       
+    j loop               # Repeat the loop
+
+smaller:
+    addi t6, x0, 97 
+    sub s1, s1, t6       # shift後超過邊界(a=97)多少，會是負數
+    addi s1, s1, 123     # z=122，所以 超過的值+123 = shift後的值
+    sb s1, 0(x20)        
+    addi x20, x20, 1     
+    addi a0, a0, 1       
+    j loop               # Repeat the loop
+
+
+
+done:
+    # Null-terminate the ciphertext string
+    sb x0, 0(x20)
+
+    # 把 x20 設回 0x10200
+    li x20, 0x10200
+
+    # Call the print_char function to print the ciphertext
+    j print_char
+
+
 ################################################################################
 
