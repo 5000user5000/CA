@@ -98,18 +98,14 @@ space:   # 如果是空格就用計數值
     j loop               # Repeat the loop
 
 bigger:
-    addi t5, x0, 122      
-    sub s1, s1, t5       # shift後超過邊界(z=122)多少
-    addi s1, s1, 96       # a=97，所以 超過的值+96 = shift後的值
+    addi s1, s1, -26       # shift後超過邊界(z=122)多少，之後又因為a=97，所以 超過的值+96 = shift後的值。 s1-122+96 = s1-26     
     sb s1, 0(x20)        
     addi x20, x20, 1     
     addi a0, a0, 1       
     j loop               # Repeat the loop
 
 smaller:
-    addi t6, x0, 97 
-    sub s1, s1, t6       # shift後超過邊界(a=97)多少，會是負數
-    addi s1, s1, 123     # z=122，所以 超過的值+123 = shift後的值
+    addi s1, s1, 26      # shift後超過邊界(a=97)多少，會是負數，z=122，所以 超過的值+123 = shift後的值。s1-97+123=s1+26
     sb s1, 0(x20)        
     addi x20, x20, 1     
     addi a0, a0, 1       
