@@ -50,7 +50,7 @@ recurse:
   srli t1, t1, 1     # 計算 n/2，向右邊移位 1 位，將值存入 t1。 n 應該會是正數，所以就不用 srai。其本身是無條件捨去法。
   jal recurse        
 
-  lw t1,0(sp)       # 把 a0 從 $sp+0 的位置取出
+  lw t1,0(sp)       # 把 當前的n值 從 $sp+0 的位置取出
   mul t0,t0,a2       # 5T(n/2) 
   mul t2,a3,t1       # 6n 
   add t0,t0,t2       # 5T(n/2) + 6n

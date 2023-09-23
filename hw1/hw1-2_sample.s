@@ -76,16 +76,16 @@ main:
     # Loop through the plaintext string
 loop:
     lbu s1, 0(a0)         # Load a character from plaintext
-    beqz s1, done         # If it's null terminator, we are done
-    beq s1, t1, done     # If it's newline, we are done
+    beqz s1, done         # 如果是 0 就跳到 done
+    beq s1, t1, done     # 如果是 newline (code=10)，代表結束，也跳到 done
 
-    beq s1, t2, space     # If it's space, we need to count it
+    beq s1, t2, space     # 如果是空格就跳到 space 去處理
 
     add s1, s1, a6      # shift the character
     bge s1, t4, bigger  # 如果shift後的值大於等於123，就到bigger去計算
     blt s1, t3, smaller # 如果shift後的值小於97，就到smaller去計算
 
-    sb s1, 0(x20)        # Store the encrypted character in the ciphertext buffer
+    sb s1, 0(x20)        # 儲存加密文字到 ciphertext buffer
     addi x20, x20, 1     # Increment the ciphertext buffer pointer
     addi a0, a0, 1       # Increment the plaintext buffer pointer
     j loop               # Repeat the loop
@@ -114,7 +114,7 @@ smaller:
 
 
 done:
-    # Null-terminate the ciphertext string
+    # 在結尾加上 null，這樣 print_char 才知道結尾
     sb x0, 0(x20)
 
     # 把 x20 設回 0x10200
