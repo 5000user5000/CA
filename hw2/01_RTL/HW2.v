@@ -18,27 +18,40 @@ module ALU #(
 // Parameters
     // ======== choose your FSM style ==========
     // 1. FSM based on operation cycles
-    // parameter S_IDLE           = 2'd0;
-    // parameter S_ONE_CYCLE_OP   = 2'd1;
-    // parameter S_MULTI_CYCLE_OP = 2'd2;
+    parameter S_IDLE           = 2'd0;
+    parameter S_ONE_CYCLE_OP   = 2'd1; 
+    parameter S_MULTI_CYCLE_OP = 2'd2; // ex: MUL，DIV
     // 2. FSM based on operation modes
-    parameter S_IDLE = 4'd0;
-    parameter S_ADD  = 4'd1;
-    parameter S_SUB  = 4'd2;
-    parameter S_AND  = 4'd3;
-    parameter S_OR   = 4'd4;
-    parameter S_SLT  = 4'd5;
-    parameter S_SRA  = 4'd6;
-    parameter S_MUL  = 4'd7;
-    parameter S_DIV  = 4'd8;
-    parameter S_OUT  = 4'd9;
+    // parameter S_IDLE = 4'd0;
+    // parameter S_ADD  = 4'd1;
+    // parameter S_SUB  = 4'd2;
+    // parameter S_AND  = 4'd3;
+    // parameter S_OR   = 4'd4;
+    // parameter S_SLT  = 4'd5;
+    // parameter S_SRA  = 4'd6;
+    // parameter S_MUL  = 4'd7;
+    // parameter S_DIV  = 4'd8;
+    // parameter S_OUT  = 4'd9;
+
+    // ======== operation modes ==========
+    parameter ADD = 3'd0;
+    parameter SUB = 3'd1;
+    parameter AND = 3'd2;
+    parameter OR  = 3'd3;
+    parameter SLT = 3'd4;
+    parameter SRA = 3'd5;
+    parameter MUL = 3'd6;
+    parameter DIV = 3'd7;
+
 
 // Wires & Regs
     // Todo
     reg  [ 4:0] counter, counter_nxt;
     reg  [63:0] shreg, shreg_nxt;
+    reg [63 : 0] alu_out;
+    reg [63:0] o_data;
     // state
-    reg  [         3: 0] state, state_nxt; // remember to expand the bit width if you want to add more states!
+    reg  [         1: 0] state, state_nxt; // remember to expand the bit width if you want to add more states!
     // load input
     reg  [  DATA_W-1: 0] operand_a, operand_a_nxt;
     reg  [  DATA_W-1: 0] operand_b, operand_b_nxt;
@@ -46,6 +59,14 @@ module ALU #(
 
 // Wire Assignments
     // Todo
+    always @(posedge i_clk) begin // clk 上升沿
+        if(state == S_MULTI_CYCLE_OP) begin
+            o_data = shreg;
+        end
+        else begin
+            o_data = {32'b0,shreg[31:0]};
+        end
+    end
 
     
 // Always Combination
@@ -71,34 +92,27 @@ module ALU #(
                     end
                     else begin
                         case(inst_nxt)
-                            0: state_nxt = ADD;
-                            1: state_nxt = SUB;
-                            2: state_nxt = AND;
-                            3: state_nxt = OR;
-                            4: state_nxt = SLT;
-                            5: state_nxt = SRA;
-                            6: state_nxt = MUL;
-                            7: state_nxt = DIV;
-                            default: state_nxt = S_IDLE;
+                            DIV: state_nxt = S_MULTI_CYCLE_OP;
+                            MUL: state_nxt = S_MULTI_CYCLE_OP;
+                            default: state_nxt = S_ONE_CYCLE_OP; //除了DIV和MUL以外的都是一個cycle就可以做完
                         endcase
                     end
                 end
-            ADD : state_nxt = S_IDLE;
-            SUB : state_nxt = S_IDLE;
-            AND : state_nxt = S_IDLE;
-            OR : state_nxt = S_IDLE;
-            SLT : state_nxt = S_IDLE;
-            SRA : state_nxt = S_IDLE;
-            MUL  : state_nxt = S_IDLE;
-            DIV  : state_nxt = S_IDLE; // counter == 31 是什麼意思?
-            OUT : state_nxt = S_IDLE; 
+            S_ONE_CYCLE_OP : state_nxt = S_IDLE;
+            S_MULTI_CYCLE_OP : begin
+                if(counter <= 5'd31) // counter == 31 應該是只要重複作 31+1次
+                    state_nxt = S_MULTI_CYCLE_OP;
+                else
+                    state_nxt = S_IDLE;
+            end
+
             default : state_nxt = state;
         endcase
     
     end
     // Todo: Counter
-    always @(*) begin
-        if(state==MUL || state==DIV)
+    always @(posedge i_clk) begin
+        if(state == S_MULTI_CYCLE_OP)
             counter_nxt = counter + 1;
         else
             counter_nxt = 0;
@@ -106,25 +120,87 @@ module ALU #(
 
     // Todo: ALU output
     always @(*) begin
-        case(state)
+        case(i_inst)
+            ADD: begin
+                // 處理 overflow
+                alu_out[31:0] = operand_a + operand_b;
+                if(operand_a[31]==operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) // 正+正=負 overflow
+                    alu_out[31:0] = {1'b0, 31'b1}; // 2^32-1
+                else if(operand_a[31]==operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) // 負+負=正 overflow
+                    alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                else
+                    // nothing
+                    $display("no overflow");
+                    //alu_out[31:0] = operand_a + operand_b;
+            end
+            SUB: begin
+                // 處理 overflow
+                alu_out[31:0] = operand_a - operand_b;
+                if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) // 正-負=負 overflow
+                    alu_out[31:0] = {1'b0, 31'b1}; // 2^32-1
+                else if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) // 負-正=正 overflow
+                    alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                else
+                    $display("no overflow");
+                    //alu_out[31:0] = operand_a - operand_b;
+                
+            end
+            AND: begin
+                alu_out[31:0] = operand_a & operand_b;
+            end
+            OR: begin
+                alu_out[31:0] = operand_a | operand_b;
+            end
+            SLT: begin
+                alu_out[31:0] = (operand_a < operand_b) ? 1'b1 : 1'b0;
+            end
+            SRA: begin
+                alu_out[31:0] = operand_a >>> operand_b; //算數右移(>>>)，不是邏輯右移(>>)
+            end
             MUL: begin
                 if(shreg[0]==1'b1)
-                    alu_out = alu_in;
+                    alu_out = operand_a;// 如果reg最右邊是1，那就把operand_a放到alu_out，之後會加到shreg最左邊
                 else
                     alu_out = 0;
             end
             DIV: begin
-                alu_out = shreg[62:31] - alu_in[31:0];
-                //since dividend will be shifted for 1 bit left at first
-                //but we skip that process , so we use 62:31.
+                alu_out = shreg[62:31] - operand_b[31:0]; // divisor
             end
             default: alu_out = 0;
         endcase
     end
+
+    //shift register
+     always @(*) begin
+        case(i_inst)
+            MUL: begin
+                shreg_nxt = {shreg[63:32]+alu_out,shreg[31:0]} >> 1; // multiplier 放在最左邊，右邊是multiplicand，加完後右移一位
+            end
+            DIV: begin
+                if(alu_out[32]==1'b1) begin  //如果是負數
+                    shreg_nxt = shreg << 1; 
+                    shreg_nxt[0] = 0;
+                end
+                else begin
+                    shreg_nxt = {alu_out[31:0],shreg[31:0]}<<1; 
+                    shreg_nxt[0] = 1;
+                end
+            end
+            default: begin
+                if(i_valid==1'd1)
+                    shreg_nxt = {32'b0, i_A[31:0]}; // extend sign bit
+                else
+                    shreg_nxt = 0;
+            end
+        endcase
+    end
+
+
     // Todo: output valid signal
+    assign o_done = (state!=S_IDLE && state_nxt== S_IDLE) ? 1'b1 : 1'b0; // state_nxt== S_IDLE 代表下一個cycle就會變成S_IDLE，所以這個cycle就是最後一個cycle
 
     // Todo: Sequential always block
-    always @(posedge i_clk or negedge i_rst_n) begin
+    always @(negedge i_clk or negedge i_rst_n) begin // 在 clk 下降沿 同步輸入
         if (!i_rst_n) begin
             state       <= S_IDLE;
             operand_a   <= 0;
@@ -136,6 +212,7 @@ module ALU #(
             operand_a   <= operand_a_nxt;
             operand_b   <= operand_b_nxt;
             inst        <= inst_nxt;
+            shreg       <= shreg_nxt;
         end
     end
 
