@@ -48,8 +48,9 @@ module ALU #(
     // Todo
     reg  [ 4:0] counter, counter_nxt;
     reg  [63:0] shreg, shreg_nxt;
-    reg [63 : 0] alu_out;
+    reg [31 : 0] alu_out;
     reg [63:0] o_data;
+    reg o_done;
     // state
     reg  [         1: 0] state, state_nxt; // remember to expand the bit width if you want to add more states!
     // load input
@@ -60,18 +61,24 @@ module ALU #(
 // Wire Assignments
     // Todo
     always @(posedge i_clk) begin // clk 上升沿
+        //$display("result assign， state = %d",state);
         if(state == S_MULTI_CYCLE_OP) begin
             o_data = shreg;
         end
         else begin
-            o_data = {32'b0,shreg[31:0]};
+            if(state == S_ONE_CYCLE_OP)
+                o_data = {32'b0,alu_out[31:0]};
+            else 
+                o_data = 64'h777; // fun
         end
+        $display("o_data=%h",o_data);
     end
 
     
 // Always Combination
     // load input
     always @(*) begin
+        //$display("i_valid=%d",i_valid);
         if (i_valid) begin
             operand_a_nxt = i_A;
             operand_b_nxt = i_B;
@@ -85,6 +92,7 @@ module ALU #(
     end
     // Todo: FSM
     always @(*) begin
+        //$display("state=%d",state);
         case(state)
             S_IDLE           : begin
                     if(i_valid == 1'd0) begin
@@ -100,7 +108,7 @@ module ALU #(
                 end
             S_ONE_CYCLE_OP : state_nxt = S_IDLE;
             S_MULTI_CYCLE_OP : begin
-                if(counter <= 5'd31) // counter == 31 應該是只要重複作 31+1次
+                if(counter != 5'd31) // counter == 31 應該是只要重複作 31+1次
                     state_nxt = S_MULTI_CYCLE_OP;
                 else
                     state_nxt = S_IDLE;
@@ -111,7 +119,7 @@ module ALU #(
     
     end
     // Todo: Counter
-    always @(posedge i_clk) begin
+    always @(*) begin //negedge i_clk
         if(state == S_MULTI_CYCLE_OP)
             counter_nxt = counter + 1;
         else
@@ -120,42 +128,57 @@ module ALU #(
 
     // Todo: ALU output
     always @(*) begin
+        //$display("inst=%d",inst);
         case(i_inst)
             ADD: begin
                 // 處理 overflow
                 alu_out[31:0] = operand_a + operand_b;
-                if(operand_a[31]==operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) // 正+正=負 overflow
-                    alu_out[31:0] = {1'b0, 31'b1}; // 2^32-1
-                else if(operand_a[31]==operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) // 負+負=正 overflow
-                    alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                if(operand_a[31]==operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) begin // 正+正=負 overflow
+                    $display("pos+pos=neg overflow %b +  %b =%b",operand_a,operand_b,alu_out);
+                    alu_out[31:0] = 32'h7fffffff; // 2^32-1
+                end
+                else  if(operand_a[31]==operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 )  begin // 負+負=正 overflow
+                        $display("neg+neg=pos overflow %b +  %b =%b",operand_a,operand_b,alu_out);
+                        alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                    end
                 else
-                    // nothing
                     $display("no overflow");
+                    //$display("no overflow，%b +  %b =%b",operand_a,operand_b,alu_out);
                     //alu_out[31:0] = operand_a + operand_b;
-            end
+                $display("alu_out = %h",alu_out);
+                end
             SUB: begin
                 // 處理 overflow
                 alu_out[31:0] = operand_a - operand_b;
-                if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) // 正-負=負 overflow
+                if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) begin // 正-負=負 overflow
+                    $display("pos-neg=neg overflow %b -  %b =%b",operand_a,operand_b,alu_out);
                     alu_out[31:0] = {1'b0, 31'b1}; // 2^32-1
-                else if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) // 負-正=正 overflow
+                end
+                else if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) begin // 負-正=正 overflow
+                    $display("neg-pos=pos overflow %b -  %b =%b",operand_a,operand_b,alu_out);
                     alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                end
                 else
                     $display("no overflow");
+                    //$display("no overflow，%b -  %b =%b",operand_a,operand_b,alu_out);
                     //alu_out[31:0] = operand_a - operand_b;
                 
             end
             AND: begin
                 alu_out[31:0] = operand_a & operand_b;
+                $display("and %b &  %b =%b",operand_a,operand_b,alu_out);
             end
             OR: begin
                 alu_out[31:0] = operand_a | operand_b;
+                $display("or %b |  %b =%b",operand_a,operand_b,alu_out);
             end
             SLT: begin
                 alu_out[31:0] = (operand_a < operand_b) ? 1'b1 : 1'b0;
+                $display("slt %b <  %b =%b",operand_a,operand_b,alu_out);
             end
             SRA: begin
                 alu_out[31:0] = operand_a >>> operand_b; //算數右移(>>>)，不是邏輯右移(>>)
+                $display("sra %b >>>  %b =%b",operand_a,operand_b,alu_out);
             end
             MUL: begin
                 if(shreg[0]==1'b1)
@@ -172,12 +195,13 @@ module ALU #(
 
     //shift register
      always @(*) begin
+        //$display("shreg，instr=%b",i_inst);
         case(i_inst)
             MUL: begin
                 shreg_nxt = {shreg[63:32]+alu_out,shreg[31:0]} >> 1; // multiplier 放在最左邊，右邊是multiplicand，加完後右移一位
             end
             DIV: begin
-                if(alu_out[32]==1'b1) begin  //如果是負數
+                if(alu_out[31]==1'b1) begin  //如果是負數
                     shreg_nxt = shreg << 1; 
                     shreg_nxt[0] = 0;
                 end
@@ -188,7 +212,7 @@ module ALU #(
             end
             default: begin
                 if(i_valid==1'd1)
-                    shreg_nxt = {32'b0, i_A[31:0]}; // extend sign bit
+                    shreg_nxt = {shreg[63:32], alu_out[31:0]}; 
                 else
                     shreg_nxt = 0;
             end
@@ -197,18 +221,29 @@ module ALU #(
 
 
     // Todo: output valid signal
-    assign o_done = (state!=S_IDLE && state_nxt== S_IDLE) ? 1'b1 : 1'b0; // state_nxt== S_IDLE 代表下一個cycle就會變成S_IDLE，所以這個cycle就是最後一個cycle
+    always @(posedge i_clk) begin
+        if(state!=S_IDLE && state_nxt== S_IDLE) begin// state_nxt== S_IDLE 代表下一個cycle就會變成S_IDLE，所以這個cycle就是最後一個cycle
+            //$display("o_done=1");
+            o_done = 1'b1;
+        end
+        else
+            o_done = 1'b0;
+    end
+
 
     // Todo: Sequential always block
-    always @(negedge i_clk or negedge i_rst_n) begin // 在 clk 下降沿 同步輸入
+    always @(posedge i_clk or negedge i_rst_n) begin // 在 clk 下降沿 同步輸入
         if (!i_rst_n) begin
+            //$display("reset!");
             state       <= S_IDLE;
-            operand_a   <= 0;
-            operand_b   <= 0;
-            inst        <= 0;
+            // operand_a   <= 0;
+            // operand_b   <= 0;
+            // inst        <= 0;
         end
         else begin
+            //$display("update!");
             state       <= state_nxt;
+            counter     <= counter_nxt;
             operand_a   <= operand_a_nxt;
             operand_b   <= operand_b_nxt;
             inst        <= inst_nxt;
