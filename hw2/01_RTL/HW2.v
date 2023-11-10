@@ -54,8 +54,8 @@ module ALU #(
     // state
     reg  [         1: 0] state, state_nxt; // remember to expand the bit width if you want to add more states!
     // load input
-    reg  [  DATA_W-1: 0] operand_a, operand_a_nxt;
-    reg  [  DATA_W-1: 0] operand_b, operand_b_nxt;
+    reg signed [  DATA_W-1: 0] operand_a, operand_a_nxt;
+    reg  signed [  DATA_W-1: 0] operand_b, operand_b_nxt;
     reg  [         2: 0] inst, inst_nxt;
 
 // Wire Assignments
@@ -152,7 +152,7 @@ module ALU #(
                 alu_out[31:0] = operand_a - operand_b;
                 if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) begin // 正-負=負 overflow
                     $display("pos-neg=neg overflow %b -  %b =%b",operand_a,operand_b,alu_out);
-                    alu_out[31:0] = {1'b0, 31'b1}; // 2^32-1
+                    alu_out[31:0] = 32'h7fffffff; // 2^32-1
                 end
                 else if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) begin // 負-正=正 overflow
                     $display("neg-pos=pos overflow %b -  %b =%b",operand_a,operand_b,alu_out);
@@ -173,7 +173,7 @@ module ALU #(
                 $display("or %b |  %b =%b",operand_a,operand_b,alu_out);
             end
             SLT: begin
-                alu_out[31:0] = (operand_a < operand_b) ? 1'b1 : 1'b0;
+                alu_out[31:0] = (operand_a < operand_b) ? 32'b1 : 32'b0;
                 $display("slt %b <  %b =%b",operand_a,operand_b,alu_out);
             end
             SRA: begin
