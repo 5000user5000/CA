@@ -48,7 +48,7 @@ module ALU #(
     // Todo
     reg  [ 4:0] counter, counter_nxt;
     reg  [63:0] shreg, shreg_nxt;
-    reg [31 : 0] alu_out;
+    reg [32 : 0] alu_out; // 多一個bit，用來處理overflow
     reg [63:0] o_data;
     reg o_done;
     // state
@@ -71,7 +71,7 @@ module ALU #(
             else 
                 o_data = 64'h777; // fun
         end
-        $display("o_data=%h",o_data);
+        //$display("o_data=%h",o_data);
     end
 
     
@@ -120,7 +120,7 @@ module ALU #(
     end
     // Todo: Counter
     always @(negedge i_clk) begin //negedge i_clk
-        $display("counter =%d",counter);
+        //$display("counter =%d",counter);
         if(state == S_MULTI_CYCLE_OP)
             counter_nxt = counter + 1;
         else 
@@ -146,7 +146,7 @@ module ALU #(
                     $display("no overflow");
                     //$display("no overflow，%b +  %b =%b",operand_a,operand_b,alu_out);
                     //alu_out[31:0] = operand_a + operand_b;
-                $display("alu_out = %h",alu_out);
+                //$display("alu_out = %h",alu_out);
                 end
             SUB: begin
                 // 處理 overflow
@@ -182,9 +182,8 @@ module ALU #(
                 //$display("sra %b >>>  %b =%b",operand_a,operand_b,alu_out);
             end
             MUL: begin
-                if(counter==5'd0) begin// initialize
+                if(counter==5'd0) begin // initialize
                     shreg[63:0] = { 32'b0 , operand_b };
-                    $display("init");
                 end
                 if(shreg[0]==1'b1)
                     alu_out = operand_a;// 如果reg最右邊是1，那就把operand_a放到alu_out，之後會加到shreg最左邊
@@ -192,7 +191,10 @@ module ALU #(
                     alu_out = 0;
             end
             DIV: begin
-                alu_out = shreg[62:31] - operand_b[31:0]; // divisor
+                if(counter==5'd0) begin // initialize
+                    shreg[63:0] = { 32'b0 , operand_a };
+                end
+                alu_out = shreg[62:31] - operand_b[31:0]; // 
             end
             default: alu_out = 0;
         endcase
@@ -211,14 +213,15 @@ module ALU #(
 
             end
             DIV: begin
-                if(alu_out[31]==1'b1) begin  //如果是負數
-                    shreg_nxt = shreg << 1; 
+                if(alu_out[32]==1'b1) begin // sign bit = 1，負數
+                    shreg_nxt = shreg << 1;
                     shreg_nxt[0] = 0;
                 end
                 else begin
-                    shreg_nxt = {alu_out[31:0],shreg[31:0]}<<1; 
+                    shreg_nxt = {1'b0,alu_out[31:0],shreg[30:0]}<<1;
                     shreg_nxt[0] = 1;
                 end
+                
             end
             default: begin
                 if(i_valid==1'd1)
