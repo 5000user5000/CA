@@ -194,7 +194,7 @@ module ALU #(
                 if(counter==5'd0) begin // initialize
                     shreg[63:0] = { 32'b0 , operand_a };
                 end
-                alu_out = shreg[62:31] - operand_b[31:0]; // 
+                alu_out = shreg[62:31] - operand_b[31:0]; // 注意是62，因為除法會比乘法多一次shift，所以這樣做可以提前一次shift
             end
             default: alu_out = 0;
         endcase
@@ -206,14 +206,13 @@ module ALU #(
         case(i_inst)
             MUL: begin
                 shreg_nxt = {shreg[63:32]+alu_out,shreg[31:0]} >> 1; // multiplier 放在最左邊，右邊是multiplicand，加完後右移一位
-                if (shreg_nxt[62:31] < shreg[63:32]) // divisor < remainder
+                if (shreg_nxt[62:31] < shreg[63:32]) // 注意是62，比較的是同批數字，因為是加法，理論上左>右，除非overflow，那麼就要補1
                     shreg_nxt[63] = 1;
                 else 
                     shreg_nxt[63] = 0;
-
             end
             DIV: begin
-                if(alu_out[32]==1'b1) begin // sign bit = 1，負數
+                if(alu_out[32]==1'b1) begin // sign bit = 1，負數就直接 shift
                     shreg_nxt = shreg << 1;
                     shreg_nxt[0] = 0;
                 end
