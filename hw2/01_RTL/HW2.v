@@ -138,12 +138,12 @@ module ALU #(
                 alu_out[31:0] = operand_a + operand_b;
                 if(operand_a[31]==operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) begin // 正+正=負 overflow
                     //$display("pos+pos=neg overflow %b +  %b =%b",operand_a,operand_b,alu_out);
-                    alu_out[31:0] = 32'h7fffffff; // 2^32-1
+                    alu_out[31:0] = 32'h7fffffff; // 2^31-1
                 end
                 else  begin
                     if(operand_a[31]==operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 )  begin // 負+負=正 overflow
                         //$display("neg+neg=pos overflow %b +  %b =%b",operand_a,operand_b,alu_out);
-                        alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                        alu_out[31:0] = {1'b1, 31'b0}; // -2^31
                     end
                 end
                 // else
@@ -155,12 +155,12 @@ module ALU #(
                 alu_out[31:0] = operand_a - operand_b;
                 if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b0  && alu_out[31]==1'b1) begin // 正-負=負 overflow
                     //$display("pos-neg=neg overflow %b -  %b =%b",operand_a,operand_b,alu_out);
-                    alu_out[31:0] = 32'h7fffffff; // 2^32-1
+                    alu_out[31:0] = 32'h7fffffff; // 2^31-1
                 end
                 else  begin
                     if(operand_a[31]!=operand_b[31] && operand_a[31]==1'b1 && alu_out[31]==1'b0 ) begin // 負-正=正 overflow
                     //$display("neg-pos=pos overflow %b -  %b =%b",operand_a,operand_b,alu_out);
-                    alu_out[31:0] = {1'b1, 31'b0}; // -2^32
+                    alu_out[31:0] = {1'b1, 31'b0}; // -2^31
                     end
                 end
                 // else
@@ -208,7 +208,7 @@ module ALU #(
                         shreg_nxt[63:0] = { 32'b0 , operand_b } >> 1;
                 end
                 else  begin
-                    shreg_nxt = {shreg[63:32]+alu_out,shreg[31:0]} >> 1; // multiplier 放在最左邊，右邊是multiplicand，加完後右移一位
+                    shreg_nxt = {shreg[63:32]+alu_out,shreg[31:0]} >> 1; // multiplicand 放在最左邊，右邊是multiplier，加完後右移一位
                     if (shreg_nxt[62:31] < shreg[63:32]) // 注意是62，比較的是同批數字，因為是加法，理論上左>右，除非overflow，那麼就要補1
                         shreg_nxt[63] = 1;
                     else 
