@@ -91,7 +91,7 @@ module Final_tb;
             .o_finish       (finish),
         // cache
             .i_cache_finish (cache_finish),
-            .o_proc_finish  (proc_finish),
+            .o_proc_finish  (proc_finish)
     );
 
     memory #(.SIZE(`SIZE_DATA)) DMEM(
@@ -133,7 +133,7 @@ module Final_tb;
             .i_proc_wen     (cache_wen),
             .i_proc_addr    (cache_addr),
             .i_proc_wdata   (cache_wdata),
-            .i_proc_finish  (proc_finish)
+            .i_proc_finish  (proc_finish),
             .o_cache_finish (cache_finish),
         // memory interface
             .o_mem_cen      (DMEM_cen),
@@ -171,7 +171,7 @@ module Final_tb;
             end
         end
 
-        mem_data_offset = eof + 8;
+        mem_data_offset = eof;
 
         #(`CYCLE*0.5) rst_n = 1'b0;
         #(`CYCLE*2.0) rst_n = 1'b1;
