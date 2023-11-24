@@ -52,8 +52,10 @@ module CHIP #(                                                                  
     parameter ALUOP_DONOTHING = 3'b111; // do nothing
 
     // alu action
-    parameter ALU_ADD = 3'b000;
-    parameter ALU_SUB = 3'b001;
+    parameter ALU_ADD = 4'b0010;
+    parameter ALU_SUB = 3'b0110;
+    parameter ALU_AND = 4'b0000;
+     parameter ALU_OR = 4'b0001;
     // ... other alu action
 
 
@@ -84,7 +86,11 @@ module CHIP #(                                                                  
         wire [BIT_W-1:0] imm;
 
         // alu wire
-        wire [BIT_W-1:0] alu_PC_input, alu_input1, alu_input2, alu_result, alu_branch_jump;
+        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump;
+
+        // data memory wire
+        wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
+        wire [BIT_W-1:0] write_back; // write back to regfile
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
@@ -110,7 +116,7 @@ module CHIP #(                                                                  
         .out    (PC_add_imm)
     );
 
-    // PC_mux_sel_Gen wire connection
+    // PC_mux_sel_Gen wire connection，decide pc_mux source
     PC_mux_sel_Gen PC_mux_sel_Gen0(
         .jump               (jump),
         .branch             (branch),
@@ -118,7 +124,7 @@ module CHIP #(                                                                  
         .sel                (PC_mux_sel)
     );
 
-    // PC_mux wire connection
+    // PC_mux wire connection，decide next_PC value
     Mux3To1 PC_mux(
         .in0    (PC_add_4),
         .in1    (PC_add_imm),
@@ -136,7 +142,7 @@ module CHIP #(                                                                  
         .rs1    (i_IMEM_data[19:15]),                
         .rs2    (i_IMEM_data[24:20]),                
         .rd     (i_IMEM_data[11:7]),                 
-        .wdata  (),             // TODO: data memory output
+        .wdata  (write_back),             // data memory output
         .rdata1 (read_data1),           
         .rdata2 (read_data2)
     );
@@ -154,6 +160,23 @@ module CHIP #(                                                                  
         .alu_op     (alu_op)
     );
 
+    // alu_control wire connection
+    ALU_control alu_control0(
+        .alu_op     (alu_op),
+        .func3      (i_IMEM_data[14:12]),
+        .func7      (i_IMEM_data[31:25]),
+        .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
+    );
+
+    // alu wire connection
+    ALU alu0(
+        .in0    (alu_input1),
+        .in1    (alu_input2),
+        .alu_signal (alu_signal),
+        .out    (alu_result),
+        .zero   (alu_branch_jump)
+    );
+
     // Imm_Gen wire connection
     Imm_Gen imm_gen0(
         .opcode (opcode),
@@ -167,6 +190,23 @@ module CHIP #(                                                                  
         .in1    (imm),
         .sel    (alu_src),
         .out    (alu_input2)
+    );
+
+    // data_memory wire connection
+    data_memory data_memory0(
+        .addr   (alu_result),
+        .wdata  (read_data2),
+        .wen    (mem_write),
+        .cen    (mem_cen),
+        .rdata  (data_mem_rdata)
+    );
+
+    // write_back wire connection
+    Mux2To1 write_back_mux(
+        .in0    (data_mem_rdata),
+        .in1    (alu_result),
+        .sel    (mem_to_reg),
+        .out    (write_back)
     );
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -346,7 +386,7 @@ module PC_mux_sel_Gen #(
     input  alu_branch_jump;
     output [1:0] sel;
 
-    assign sel = jump ? 2'b10 : (branch && alu_branch_jump) ? 2'b01 : 2'b00; 
+    assign sel = jump ? 2'b10 : (branch && alu_branch_jump) ? 2'b01 : 2'b00; // jump = 2'b10，brach = 2'b01，others = 2'b00
 )
 endmodule
 
@@ -387,6 +427,74 @@ module Adder #(
 );
 endmodule
 
+module ALU_control #(
+    parameter BIT_W = 32
+)(
+    input  [2:0]        alu_op,
+    input  [2:0]        func3,
+    input  [6:0]        func7,
+    output [3:0]        alu_signal // signal to alu
+
+    always @(posedge clk) begin
+        case(alu_op)
+            2'b00: begin
+                alu_signal = 4'b0010; // instr: ld、sd。alu action is add
+            end
+            2'b01: begin
+                alu_signal = 4'b0110; // instr: beq。alu action is sub
+            end
+            2'b10: begin
+                if (func3[5]==1'b1) begin
+                    alu_signal = ALU_SUB; // instr: R-type sub。alu action is sub
+                end
+                else begin
+                    case(func3)
+                    3'b000: alu_signal = ALU_ADD;
+                    3'b110: alu_signal = ALU_OR;
+                    3'b111: alu_signal = ALU_AND;
+                    default: alu_signal = ALU_SUB;
+                endcase
+                end
+            end
+            default: begin
+                alu_signal = ALU_ADD; // JUST a default value
+            end
+        endcase
+    end
+);
+endmodule
+
+module ALU #(
+    parameter BIT_W = 32
+)(
+    input  [BIT_W-1:0]  in0,
+    input  [BIT_W-1:0]  in1,
+    input  [3:0]        alu_signal,
+    output [BIT_W-1:0]  alu_result,
+    output      zero,
+
+    always @(posedge clk) begin
+        case(alu_signal)
+            ALU_ADD: begin
+                out = in0 + in1;
+            end
+            ALU_SUB: begin
+                out = in0 - in1;
+                zero = (out == 0) ? 1 : 0; // branch signal
+            end
+            ALU_AND: begin
+                out = in0 & in1;
+            end
+            ALU_OR: begin
+                out = in0 | in1;
+            end
+            default: begin
+                out = in0 + in1;
+            end
+        endcase
+    end
+);
+endmodule
 
 module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
    
@@ -430,6 +538,35 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
                 mem[i] <= mem_nxt[i];
         end       
     end
+endmodule
+
+module data_memory #(
+    parameter BIT_W = 32
+    parameter BITS = 32;
+    parameter word_depth = 32;
+)(  
+    input [BIT_W-1:0] addr,
+    input [BIT_W-1:0] wdata,
+    input wen, // wen: 0:read | 1:write
+    input cen, // cen: 0:inactive | 1:active (enable memory function?) 
+    output [BIT_W-1:0] rdata,
+
+    reg [BITS-1:0] mem [0:word_depth-1]; // 32 32-bit memory
+
+    if(cen) begin
+        if(wen) begin
+            mem[addr] = wdata;
+            rdata = 0; // default value
+        end
+        else begin
+            rdata = mem[addr];
+        end
+    end
+    else begin
+        rdata = 0;
+    end
+
+);
 endmodule
 
 module MULDIV_unit(
