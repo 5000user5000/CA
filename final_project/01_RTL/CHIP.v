@@ -16,7 +16,7 @@ module CHIP #(                                                                  
         output              o_DMEM_wen,                                                         //
         output [BIT_W-1:0]  o_DMEM_addr,                                                        //
         output [BIT_W-1:0]  o_DMEM_wdata,                                                       //
-    // finnish procedure                                                                        //
+    // finish procedure                                                                        //
         output              o_finish,                                                           //
     // cache                                                                                    //
         input               i_cache_finish,                                                     //
@@ -48,14 +48,22 @@ module CHIP #(                                                                  
     parameter ALUOP_BRANCH = 3'b011;  // need check func3 to know which alu action to use
     parameter ALUOP_AUIPC = 3'100; // alu action is add pc
     parameter ALUOP_JAL = 3'b101;  // alu action is add pc
-    parameter ALUOP_ECALL = 3'b110; // ????
+    parameter ALUOP_ECALL = 3'b110; // THE end of program
     parameter ALUOP_DONOTHING = 3'b111; // do nothing
 
-    // alu action
+    // alu action (alu_signal)
+    parameter ALU_AND = 4'b0000;
+    parameter ALU_OR  = 4'b0001;
     parameter ALU_ADD = 4'b0010;
     parameter ALU_SUB = 3'b0110;
-    parameter ALU_AND = 4'b0000;
-     parameter ALU_OR = 4'b0001;
+    parameter ALU_SLL = 4'b0111;
+    parameter ALU_NOR = 4'b1100;
+    parameter ALU_XOR = 4'b1101;
+    parameter ALU_SRL = 4'b1110;
+    parameter ALU_SLT = 4'b1111;
+    //parameter ALU_SLTU = 4'b1111;
+
+    
     // ... other alu action
 
 
@@ -86,7 +94,7 @@ module CHIP #(                                                                  
         wire [BIT_W-1:0] imm;
 
         // alu wire
-        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump;
+        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump, alu_with_pc; // alu_with_pc such as jalr, jal, auipc need to use pc as input1
 
         // data memory wire
         wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
@@ -125,10 +133,9 @@ module CHIP #(                                                                  
     );
 
     // PC_mux wire connection，decide next_PC value
-    Mux3To1 PC_mux(
+    Mux2To1 PC_mux(
         .in0    (PC_add_4),
-        .in1    (PC_add_imm),
-        .in2    (alu_result),
+        .in1    (PC_add_imm), // jump or branch
         .sel    (PC_mux_sel),
         .out    (next_PC)
     );
@@ -166,6 +173,14 @@ module CHIP #(                                                                  
         .func3      (i_IMEM_data[14:12]),
         .func7      (i_IMEM_data[31:25]),
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
+    );
+
+    // alu_input1_mux wire connection
+    Mux2To1 alu_input1_mux(
+        .in0    (read_data1),
+        .in1    (PC),
+        .sel    (alu_with_pc), 
+        .out    (alu_input1)
     );
 
     // alu wire connection
@@ -233,7 +248,6 @@ module Control(
 
     always @(posedge clk) begin
         case(opcode)
-            // Where to get pc?
             AUPIC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
                 jump = 0;
                 branch = 0;
@@ -242,6 +256,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
+                alu_with_pc = 1; // need to use pc
                 alu_op = ALUOP_AUIPC;
             end
             JAL_OPCODE: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
@@ -252,6 +267,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
+                alu_with_pc = 1; // need to use pc
                 alu_op = ALUOP_JAL;
             end
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
@@ -262,6 +278,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
+                alu_with_pc = 1; // need to use pc
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             BRANCH_OPCODE: begin 
@@ -272,6 +289,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
+                alu_with_pc = 0;
                 alu_op = ALUOP_BRANCH;
             end
             LOAD_OPCODE: begin // reg[rd] = M[reg[rs1] + imm];
@@ -282,6 +300,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
+                alu_with_pc = 0;
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             STORE_OPCODE: begin // M[reg[rs1] + imm] = reg[rs2];
@@ -292,6 +311,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
+                alu_with_pc = 0;
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             OP_IMM_OPCODE: begin
@@ -302,6 +322,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
+                alu_with_pc = 0;
                 alu_op = ALUOP_IMM_OPETATION;
             end
             OP_OPCODE: begin
@@ -312,9 +333,11 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 0;
+                alu_with_pc = 0;
                 alu_op = ALUOP_OPETATION; 
             end
             ECALL_OPCODE: begin
+                o_finish = 1; // finish program
                 jump = 0;
                 branch = 0;
                 mem_read = 0;
@@ -322,6 +345,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
+                alu_with_pc = 0;
                 alu_op = ALUOP_ECALL;
             end
             default: begin
@@ -332,6 +356,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
+                alu_with_pc = 0;
                 alu_op = ALUOP_DONOTHING;
             end
         endcase
@@ -384,9 +409,9 @@ module PC_mux_sel_Gen #(
     input  jump;
     input  branch;
     input  alu_branch_jump;
-    output [1:0] sel;
+    output  sel;
 
-    assign sel = jump ? 2'b10 : (branch && alu_branch_jump) ? 2'b01 : 2'b00; // jump = 2'b10，brach = 2'b01，others = 2'b00
+    assign sel = jump ? 1'b1 : (branch && alu_branch_jump) ? 1'b1 : 2'b00; // jump = 1，branch = 1，others = 0。因為上方的加法器 add sum 都會是跳轉的位址
 )
 endmodule
 
@@ -399,20 +424,6 @@ module Mux2To1 #(
     output [BIT_W-1:0]  out
 
     assign out = sel ? in1 : in0;
-);
-endmodule
-
-
-module Mux3To1 #(
-    parameter BIT_W = 32
-)(
-    input  [BIT_W-1:0]  in0,
-    input  [BIT_W-1:0]  in1,
-    input  [BIT_W-1:0]  in2,
-    input  [1:0]        sel,
-    output [BIT_W-1:0]  out
-
-    assign out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
 );
 endmodule
 
@@ -437,24 +448,59 @@ module ALU_control #(
 
     always @(posedge clk) begin
         case(alu_op)
-            2'b00: begin
-                alu_signal = 4'b0010; // instr: ld、sd。alu action is add
+            ALUOP_LOAD_STORE_JALR: begin
+                alu_signal = ALU_ADD; // instr: ld、sd、jalr。alu action is add
             end
-            2'b01: begin
-                alu_signal = 4'b0110; // instr: beq。alu action is sub
-            end
-            2'b10: begin
-                if (func3[5]==1'b1) begin
+            ALUOP_OPETATION: begin
+                if (func7[6]==1'b1) begin
                     alu_signal = ALU_SUB; // instr: R-type sub。alu action is sub
                 end
                 else begin
                     case(func3)
                     3'b000: alu_signal = ALU_ADD;
+                    3'b001: alu_signal = ALU_SLL;
+                    3'b010: alu_signal = ALU_SLT;
+                    3'b011: alu_signal = ALU_SLT; // sltu
+                    3'b100: alu_signal = ALU_XOR;
+                    3'b101: alu_signal = ALU_SRL;
                     3'b110: alu_signal = ALU_OR;
                     3'b111: alu_signal = ALU_AND;
-                    default: alu_signal = ALU_SUB;
+                    default: alu_signal = ALU_ADD;
                 endcase
                 end
+            end
+            ALUOP_IMM_OPETATION: begin
+                case(func3)
+                    3'b000: alu_signal = ALU_ADD;
+                    3'b001: alu_signal = ALU_SLL;
+                    3'b010: alu_signal = ALU_SLT;
+                    3'b011: alu_signal = ALU_SLT; // sltu
+                    3'b100: alu_signal = ALU_XOR;
+                    3'b101: alu_signal = ALU_SRL;
+                    3'b110: alu_signal = ALU_OR;
+                    3'b111: alu_signal = ALU_AND;
+                    default: alu_signal = ALU_ADD;
+                endcase
+            end
+            ALUOP_BRANCH: begin
+                case (func3)
+                    3'b000: alu_signal = ALU_AND; // beq
+                    3'b001: alu_signal = ALU_OR; // bne
+                    3'b100: alu_signal = ALU_SLT; // blt
+                    3'b101: alu_signal = ALU_SUB; // bge
+                    // 3'b110: alu_signal = ALU_SLT; // bltu，not used
+                    // 3'b111: alu_signal = ALU_SRL; // bgeu
+                    default: alu_signal = ALU_ADD; // default alu action is add
+                endcase
+            end
+            ALUOP_AUIPC: begin
+                alu_signal = ALU_ADD; // instr: auipc。alu action is add
+            end
+            ALUOP_JAL: begin
+                alu_signal = ALU_ADD; // instr: jal。alu action is add
+            end
+            ALUOP_ECALL: begin
+                alu_signal = ALU_ADD; // instr: ecall。default alu action is add
             end
             default: begin
                 alu_signal = ALU_ADD; // JUST a default value
@@ -476,20 +522,39 @@ module ALU #(
     always @(posedge clk) begin
         case(alu_signal)
             ALU_ADD: begin
-                out = in0 + in1;
+                alu_result = in0 + in1;
             end
             ALU_SUB: begin
-                out = in0 - in1;
-                zero = (out == 0) ? 1 : 0; // branch signal
+                alu_result = in0 - in1;
+                zero = (alu_result > 0) ? 1 : 0; // branch signal，alu_result > 0 -> bge
             end
             ALU_AND: begin
-                out = in0 & in1;
+                alu_result = in0 & in1;
+                //zero = (alu_result == 0) ? 1 : 0; // branch signal，beq。 wrong because 0000 & 0000 = 0，but should be true
+                zero = (in0 == in1) ? 1 : 0; // branch signal，beq
             end
             ALU_OR: begin
-                out = in0 | in1;
+                alu_result = in0 | in1;
+                zero = (in0 != in1) ? 1 : 0; // branch signal，bne
+            end
+            ALU_XOR: begin
+                alu_result = in0 ^ in1;
+            end
+            ALU_SLL: begin
+                alu_result = in0 << in1;
+            end
+            ALU_SRL: begin
+                alu_result = in0 >> in1;
+            end
+            ALU_SLT: begin
+                alu_result = (in0 < in1) ? 1 : 0;
+                zero = (alu_result == 1) ? 1 : 0; // branch signal，blt
+            end
+            ALU_NOR: begin
+                alu_result = ~(in0 | in1);
             end
             default: begin
-                out = in0 + in1;
+                alu_result = in0 + in1;
             end
         endcase
     end
