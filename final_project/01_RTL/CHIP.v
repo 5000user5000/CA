@@ -526,7 +526,7 @@ module ALU #(
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
-                zero = (alu_result > 0) ? 1 : 0; // branch signal，alu_result > 0 -> bge
+                zero = (alu_result >= 0) ? 1 : 0; // branch signal，alu_result > 0 -> bge
             end
             ALU_AND: begin
                 alu_result = in0 & in1;
