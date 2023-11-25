@@ -94,11 +94,11 @@ module CHIP #(                                                                  
         wire [BIT_W-1:0] imm;
 
         // alu wire
-        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump, alu_with_pc; // alu_with_pc such as jalr, jal, auipc need to use pc as input1
+        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump, rd_with_pc; // rd_with_pc such as jalr, jal, auipc need to use pc to update rd
 
         // data memory wire
         wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
-        wire [BIT_W-1:0] write_back; // write back to regfile
+        wire [BIT_W-1:0] write_back，reg_wdata; // write_back 是write_back_mux(WB)的輸出，reg_wdata是reg write data 最終寫入regfile的值
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
@@ -149,7 +149,7 @@ module CHIP #(                                                                  
         .rs1    (i_IMEM_data[19:15]),                
         .rs2    (i_IMEM_data[24:20]),                
         .rd     (i_IMEM_data[11:7]),                 
-        .wdata  (write_back),             // data memory output
+        .wdata  (reg_wdata),             // data memory output or PC+4
         .rdata1 (read_data1),           
         .rdata2 (read_data2)
     );
@@ -175,12 +175,12 @@ module CHIP #(                                                                  
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
     );
 
-    // alu_input1_mux wire connection
-    Mux2To1 alu_input1_mux(
-        .in0    (read_data1),
-        .in1    (PC),
-        .sel    (alu_with_pc), 
-        .out    (alu_input1)
+    // reg_wdata_mux wire connection
+    Mux2To1 reg_wdata_mux(
+        .in0    (write_back),
+        .in1    (PC_add_4),
+        .sel    (rd_with_pc), 
+        .out    (reg_wdata)
     );
 
     // alu wire connection
@@ -256,7 +256,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                alu_with_pc = 1; // need to use pc
+                rd_with_pc = 1; // need to use pc
                 alu_op = ALUOP_AUIPC;
             end
             JAL_OPCODE: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
@@ -267,7 +267,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                alu_with_pc = 1; // need to use pc
+                rd_with_pc = 1; // need to use pc
                 alu_op = ALUOP_JAL;
             end
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
@@ -278,7 +278,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                alu_with_pc = 1; // need to use pc
+                rd_with_pc = 1; // need to use pc
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             BRANCH_OPCODE: begin 
@@ -289,7 +289,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_BRANCH;
             end
             LOAD_OPCODE: begin // reg[rd] = M[reg[rs1] + imm];
@@ -300,7 +300,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             STORE_OPCODE: begin // M[reg[rs1] + imm] = reg[rs2];
@@ -311,7 +311,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_LOAD_STORE_JALR;
             end
             OP_IMM_OPCODE: begin
@@ -322,7 +322,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_IMM_OPETATION;
             end
             OP_OPCODE: begin
@@ -333,7 +333,7 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 0;
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_OPETATION; 
             end
             ECALL_OPCODE: begin
@@ -345,7 +345,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_ECALL;
             end
             default: begin
@@ -356,7 +356,7 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                alu_with_pc = 0;
+                rd_with_pc = 0;
                 alu_op = ALUOP_DONOTHING;
             end
         endcase
