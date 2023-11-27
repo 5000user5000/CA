@@ -65,7 +65,8 @@ module CHIP #(                                                                  
     parameter ALU_BNE = 4'b1010;
     parameter ALU_BLT = 4'b1011;
     parameter ALU_BGE = 4'b1100;
-    parameter ALU_DONOTHING = 4'b1101;
+    parameter ALU_MUL = 4'b1101;
+    parameter ALU_DONOTHING = 4'b1110;
 
     //parameter ALU_SLTU = 4'b1111;
 
@@ -93,14 +94,18 @@ module CHIP #(                                                                  
         // control input wire
         wire [6:0] opcode;
         // control output wire
-        wire jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src;
+        wire jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src,jalr_signal;
+        wire [1:0] rd_with_pc; // rd 值是否要用到pc
         wire [2:0] alu_op;
 
         // imm_gen wire
         wire [BIT_W-1:0] imm;
 
         // alu wire
-        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch_jump, rd_with_pc; // rd_with_pc such as jalr, jal, auipc need to use pc to update rd
+        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch; 
+
+        // adder imm wire
+        wire [BIT_W-1:0] pc_imm_input1;
 
         // data memory wire
         wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
@@ -123,18 +128,28 @@ module CHIP #(                                                                  
         .out    (PC_add_4)
     );
 
+    // pc_imm_input1_mux ，decide pc_imm_input1 value，jalr or others
+    Mux2To1 pc_imm_input1_mux(
+        .in0    (PC),
+        .in1    (rdata1), // jalr
+        .sel    (jalr_signal),
+        .out    (pc_imm_input1)
+    );
+
+
     // PC_imm_adder wire connection
     Adder PC_imm_adder(
-        .in0    (PC),
+        .in0    (pc_imm_input1),
         .in1    (imm),
         .out    (PC_add_imm)
     );
+
 
     // PC_mux_sel_Gen wire connection，decide pc_mux source
     PC_mux_sel_Gen PC_mux_sel_Gen0(
         .jump               (jump),
         .branch             (branch),
-        .alu_branch_jump    (alu_branch_jump),
+        .alu_branch         (alu_branch),
         .sel                (PC_mux_sel)
     );
 
@@ -170,7 +185,8 @@ module CHIP #(                                                                  
         .reg_write  (reg_write),
         .mem_to_reg (mem_to_reg),
         .alu_src    (alu_src),
-        .alu_op     (alu_op)
+        .alu_op     (alu_op),
+        .jalr_signal(jalr_signal),
     );
 
     // alu_control wire connection
@@ -181,11 +197,12 @@ module CHIP #(                                                                  
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
     );
 
-    // reg_wdata_mux wire connection
-    Mux2To1 reg_wdata_mux(
+    // reg_wdata_mux wire connection (最終寫回regfile的值)
+    Mux3To1 reg_wdata_mux(
         .in0    (write_back),
-        .in1    (PC_add_4),
-        .sel    (rd_with_pc), 
+        .in1    (PC_add_4),  // jal、jalr
+        .in2    (PC_add_imm), // auipc
+        .sel    (rd_with_pc), // rd 值是否要用到pc
         .out    (reg_wdata)
     );
 
@@ -195,7 +212,7 @@ module CHIP #(                                                                  
         .in1    (alu_input2),
         .alu_signal (alu_signal),
         .out    (alu_result),
-        .zero   (alu_branch_jump)
+        .alu_branch   (alu_branch)
     );
 
     // Imm_Gen wire connection
@@ -221,7 +238,7 @@ module CHIP #(                                                                  
         .rdata  (data_mem_rdata)
     );
 
-    // write_back wire connection
+    // write_back wire connection (data memory 旁邊的mux，並非最終寫回去reg的訊號)
     Mux2To1 write_back_mux(
         .in0    (alu_result),
         .in1    (data_mem_rdata),
@@ -248,7 +265,8 @@ endmodule
 
 module Control(
     input [6:0] opcode,
-    output jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src,
+    output jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal,
+    output [1:0] rd_with_pc, 
     output [2:0] alu_op
 
     always @(posedge clk) begin
@@ -261,7 +279,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 1; // need to use pc
+                rd_with_pc = 2'b10; // aupic
+                jalr_signal = 0;
                 alu_op = ALUOP_AUIPC;
             end
             JAL_OPCODE: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
@@ -272,7 +291,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 1; // need to use pc
+                rd_with_pc = 2'b01; //  pc+4
+                jalr_signal = 0;
                 alu_op = ALUOP_JAL_JALR;
             end
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
@@ -283,7 +303,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 1; // need to use pc
+                rd_with_pc = 2'b01; // need to use pc
+                jalr_signal = 1;
                 alu_op = ALUOP_JAL_JALR;
             end
             BRANCH_OPCODE: begin 
@@ -294,7 +315,8 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_BRANCH;
             end
             LOAD_OPCODE: begin // reg[rd] = M[reg[rs1] + imm];
@@ -305,7 +327,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_LOAD_STORE;
             end
             STORE_OPCODE: begin // M[reg[rs1] + imm] = reg[rs2];
@@ -316,7 +339,8 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_LOAD_STORE;
             end
             OP_IMM_OPCODE: begin
@@ -327,7 +351,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_IMM_OPETATION;
             end
             OP_OPCODE: begin
@@ -338,7 +363,8 @@ module Control(
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_OPETATION; 
             end
             ECALL_OPCODE: begin
@@ -350,7 +376,8 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_ECALL;
             end
             default: begin
@@ -361,7 +388,8 @@ module Control(
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 0;
+                rd_with_pc = 2'b00;
+                jalr_signal = 0;
                 alu_op = ALUOP_DONOTHING;
             end
         endcase
@@ -413,10 +441,10 @@ module PC_mux_sel_Gen #(
 )(
     input  jump;
     input  branch;
-    input  alu_branch_jump;
+    input  alu_branch;
     output  sel;
 
-    assign sel = jump ? 1'b1 : (branch && alu_branch_jump) ? 1'b1 : 2'b00; // jump = 1，branch = 1，others = 0。因為上方的加法器 add sum 都會是跳轉的位址
+    assign sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 2'b00; // jump = 1，branch = 1，others = 0。因為上方的加法器 add sum 都會是跳轉的位址
 )
 endmodule
 
@@ -429,6 +457,19 @@ module Mux2To1 #(
     output [BIT_W-1:0]  out
 
     assign out = sel ? in1 : in0;
+);
+endmodule
+
+module Mux3To1 #(
+    parameter BIT_W = 32
+)(
+    input  [BIT_W-1:0]  in0,
+    input  [BIT_W-1:0]  in1,
+    input  [BIT_W-1:0]  in2,
+    input  [1:0]        sel,
+    output [BIT_W-1:0]  out
+
+    assign out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
 );
 endmodule
 
@@ -460,6 +501,9 @@ module ALU_control #(
                 if (func7[6]==1'b1) begin
                     alu_signal = ALU_SUB; // instr: R-type sub。alu action is sub
                 end
+                else if(func7[0]==1'b1) begin
+                    alu_signal = ALU_MUL; // instr: R-type ，alu action is MUL
+                end
                 else begin
                     case(func3)
                     3'b000: alu_signal = ALU_ADD;
@@ -470,7 +514,7 @@ module ALU_control #(
                     3'b101: alu_signal = ALU_SRL;
                     3'b110: alu_signal = ALU_OR;
                     3'b111: alu_signal = ALU_AND;
-                    default: alu_signal = ALU_ADD;
+                    default: alu_signal = ALU_DONOTHING;
                 endcase
                 end
             end
@@ -484,7 +528,7 @@ module ALU_control #(
                     3'b101: alu_signal = ALU_SRL;
                     3'b110: alu_signal = ALU_OR;
                     3'b111: alu_signal = ALU_AND;
-                    default: alu_signal = ALU_ADD;
+                    default: alu_signal = ALU_DONOTHING;
                 endcase
             end
             ALUOP_BRANCH: begin
@@ -495,17 +539,17 @@ module ALU_control #(
                     3'b101: alu_signal = ALU_BGE; // bge
                     // 3'b110: alu_signal = ALU_SLT; // bltu，not used
                     // 3'b111: alu_signal = ALU_SRL; // bgeu
-                    default: alu_signal = ALU_ADD; // default alu action is add
+                    default: alu_signal = ALU_DONOTHING;
                 endcase
             end
             ALUOP_AUIPC: begin
                 alu_signal = ALU_ADD; // instr: auipc。alu action is add
             end
             ALUOP_JAL_JALR: begin
-                alu_signal = ALU_DONOTHING; // instr: jal。alu action is add
+                alu_signal = ALU_DONOTHING; // instr: jal。alu action is do nothing
             end
             ALUOP_ECALL: begin
-                alu_signal = ALU_DONOTHING; // instr: ecall。default alu action is add
+                alu_signal = ALU_DONOTHING; // instr: ecall。default alu action is do nothing
             end
             default: begin
                 alu_signal = ALU_DONOTHING; // JUST a default value
@@ -522,65 +566,69 @@ module ALU #(
     input  [BIT_W-1:0]  in1,
     input  [3:0]        alu_signal,
     output [BIT_W-1:0]  alu_result,
-    output      zero,
+    output      alu_branch, // alu branch  signal
 
     always @(posedge clk) begin
         case(alu_signal)
             ALU_ADD: begin
-                alu_result = in0 + in1;
-                zero = 0;
+                alu_result = in0 + in1; // 先不想overflow的問題
+                alu_branch = 0;
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
-                zero = 0;
+                alu_branch_ = 0;
             end
             ALU_AND: begin
                 alu_result = in0 & in1;
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_OR: begin
                 alu_result = in0 | in1;
-                zero = 0;
+                alu_branch_ = 0;
             end
             ALU_XOR: begin
                 alu_result = in0 ^ in1;
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_SLL: begin
                 alu_result = in0 << in1;
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_SRL: begin
                 alu_result = in0 >> in1;
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_SLT: begin
                 alu_result = (in0 < in1) ? 1 : 0;
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_NOR: begin
                 alu_result = ~(in0 | in1);
-                zero = 0;
+                alu_branch = 0;
             end
             ALU_BEQ: begin
                 alu_result = 0;
-                zero = (in0 == in1) ? 1 : 0; 
+                alu_branch = (in0 == in1) ? 1 : 0; 
             end
             ALU_BNE: begin
                 alu_result = 0;
-                zero = (in0 != in1) ? 1 : 0; 
+                alu_branch = (in0 != in1) ? 1 : 0; 
             end
             ALU_BLT: begin
                 alu_result = 0;
-                zero = (in0 < in1) ? 1 : 0; 
+                alu_branch = (in0 < in1) ? 1 : 0; 
             end
             ALU_BGE: begin
                 alu_result = 0;
-                zero = (in0 >= in1) ? 1 : 0; 
+                alu_branch = (in0 >= in1) ? 1 : 0; 
+            end
+            ALU_MUL: begin
+                alu_result = in0 * in1; // 暫時，之後要改成 MULDIV_unit
+                alu_branch = 0;
             end
             default: begin
                 alu_result = in0 + in1;
-                zero = 0;
+                alu_branch = 0;
             end
         endcase
     end
