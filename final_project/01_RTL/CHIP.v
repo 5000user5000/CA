@@ -46,7 +46,7 @@ module CHIP #(                                                                  
     parameter ALUOP_OPETATION = 3'b001; // need check func3 and func7 to know which alu action to use
     parameter ALUOP_IMM_OPETATION = 3'b010; // need check func3 to know which alu action to use
     parameter ALUOP_BRANCH = 3'b011;  // need check func3 to know which alu action to use
-    parameter ALUOP_AUIPC = 3'100; // alu action is add pc
+    parameter ALUOP_AUIPC = 3'b100; // alu action is add pc
     parameter ALUOP_JAL_JALR = 3'b101;  // alu action is add pc
     parameter ALUOP_ECALL = 3'b110; // THE end of program
     parameter ALUOP_DONOTHING = 3'b111; // do nothing
@@ -86,7 +86,7 @@ module CHIP #(                                                                  
 
         // PC wire
         wire [BIT_W-1:0] PC_add_4, PC_add_imm, alu_result;
-        wire [1:0] PC_mux_sel;
+        wire PC_mux_sel, next_pc_wire;
         
         // regfile wire
         wire [BIT_W-1:0] read_data1, read_data2;
@@ -94,7 +94,7 @@ module CHIP #(                                                                  
         // control input wire
         wire [6:0] opcode;
         // control output wire
-        wire jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src,jalr_signal;
+        wire jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
         wire [1:0] rd_with_pc; // rd 值是否要用到pc
         wire [2:0] alu_op;
 
@@ -102,14 +102,16 @@ module CHIP #(                                                                  
         wire [BIT_W-1:0] imm;
 
         // alu wire
-        wire [BIT_W-1:0] alu_signal, alu_input1, alu_input2, alu_result, alu_branch; 
+        wire [BIT_W-1:0]  alu_input1, alu_input2, alu_result; 
+        wire alu_branch;
+        wire [3:0] alu_signal;
 
         // adder imm wire
         wire [BIT_W-1:0] pc_imm_input1;
 
         // data memory wire
         wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
-        wire [BIT_W-1:0] write_back，reg_wdata; // write_back 是write_back_mux(WB)的輸出，reg_wdata是reg write data 最終寫入regfile的值
+        wire [BIT_W-1:0] write_back,reg_wdata; // write_back" is the output of "write_back_mux (WB)," and "reg_wdata" is the final value written into the regfile
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
@@ -131,7 +133,7 @@ module CHIP #(                                                                  
     // pc_imm_input1_mux ，decide pc_imm_input1 value，jalr or others
     Mux2To1 pc_imm_input1_mux(
         .in0    (PC),
-        .in1    (rdata1), // jalr
+        .in1    (read_data1), // jalr
         .sel    (jalr_signal),
         .out    (pc_imm_input1)
     );
@@ -158,7 +160,7 @@ module CHIP #(                                                                  
         .in0    (PC_add_4),
         .in1    (PC_add_imm), // jump or branch
         .sel    (PC_mux_sel),
-        .out    (next_PC)
+        .out    (next_pc_wire)
     );
 
 
@@ -177,6 +179,7 @@ module CHIP #(                                                                  
 
     // Control wire connection
     Control control0(
+        .i_clk      (i_clk),
         .opcode     (opcode),
         .jump       (jump),
         .branch     (branch),
@@ -187,10 +190,13 @@ module CHIP #(                                                                  
         .alu_src    (alu_src),
         .alu_op     (alu_op),
         .jalr_signal(jalr_signal),
+        .rd_with_pc (rd_with_pc),
+        .o_finish   (o_finish)
     );
 
     // alu_control wire connection
     ALU_control alu_control0(
+        .i_clk      (i_clk),
         .alu_op     (alu_op),
         .func3      (i_IMEM_data[14:12]),
         .func7      (i_IMEM_data[31:25]),
@@ -208,15 +214,17 @@ module CHIP #(                                                                  
 
     // alu wire connection
     ALU alu0(
+        .i_clk  (i_clk),
         .in0    (alu_input1),
         .in1    (alu_input2),
         .alu_signal (alu_signal),
-        .out    (alu_result),
+        .alu_result    (alu_result),
         .alu_branch   (alu_branch)
     );
 
     // Imm_Gen wire connection
     Imm_Gen imm_gen0(
+        .i_clk  (i_clk),
         .opcode (opcode),
         .inst   (i_IMEM_data),
         .imm    (imm)
@@ -257,21 +265,51 @@ module CHIP #(                                                                  
             PC <= 32'h00010000; // Do not modify this value!!!
         end
         else begin
-            PC <= next_PC;
+            PC <= next_pc_wire;
+            //PC <= next_PC;
         end
     end
 endmodule
 
 
-module Control(
+module Control #(
+    parameter AUIPC_OPCODE = 7'b0010111,
+    parameter JAL_OPCODE = 7'b1101111,
+    parameter JALR_OPCODE = 7'b1100111,
+    parameter BRANCH_OPCODE = 7'b1100011,
+    parameter LOAD_OPCODE = 7'b0000011,
+    parameter STORE_OPCODE = 7'b0100011,
+    parameter OP_IMM_OPCODE = 7'b0010011,
+    parameter OP_OPCODE = 7'b0110011,
+    parameter ECALL_OPCODE = 7'b1110011,
+
+    // alu control input
+    parameter ALUOP_LOAD_STORE = 3'b000, // alu action is add
+    parameter ALUOP_OPETATION = 3'b001, // need check func3 and func7 to know which alu action to use
+    parameter ALUOP_IMM_OPETATION = 3'b010, // need check func3 to know which alu action to use
+    parameter ALUOP_BRANCH = 3'b011,  // need check func3 to know which alu action to use
+    parameter ALUOP_AUIPC = 3'b100, // alu action is add pc
+    parameter ALUOP_JAL_JALR = 3'b101,  // alu action is add pc
+    parameter ALUOP_ECALL = 3'b110, // THE end of program
+    parameter ALUOP_DONOTHING = 3'b111 // do nothing
+
+)
+(
     input [6:0] opcode,
+    input i_clk,
     output jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal,
     output [1:0] rd_with_pc, 
-    output [2:0] alu_op
+    output [2:0] alu_op,
+    output o_finish // finish program
+);
+    reg jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
+    reg [1:0] rd_with_pc;
+    reg [2:0] alu_op;
+    reg o_finish;
 
-    always @(posedge clk) begin
+    always @(posedge i_clk) begin
         case(opcode)
-            AUPIC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
+            AUIPC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
                 jump = 0;
                 branch = 0;
                 mem_read = 0;
@@ -394,19 +432,30 @@ module Control(
             end
         endcase
     end
-);
 endmodule
 
 module Imm_Gen #(
-    parameter BIT_W = 32
+    parameter BIT_W = 32,
+    parameter AUIPC_OPCODE = 7'b0010111,
+    parameter JAL_OPCODE = 7'b1101111,
+    parameter JALR_OPCODE = 7'b1100111,
+    parameter BRANCH_OPCODE = 7'b1100011,
+    parameter LOAD_OPCODE = 7'b0000011,
+    parameter STORE_OPCODE = 7'b0100011,
+    parameter OP_IMM_OPCODE = 7'b0010011,
+    parameter OP_OPCODE = 7'b0110011
 )(
     input  [6:0]        opcode,
     input  [BIT_W-1:0]  inst,
+    input i_clk,
     output [BIT_W-1:0]  imm
+);
 
-    always @(posedge clk) begin
+    reg [BIT_W-1:0] imm;
+
+    always @(posedge i_clk) begin
         case(opcode)
-            AUPIC_OPCODE: begin 
+            AUIPC_OPCODE: begin 
                 imm = {inst[31:12], 12'b0};
             end
             JAL_OPCODE: begin 
@@ -432,20 +481,22 @@ module Imm_Gen #(
             end
         endcase
     end
-);
 endmodule
 
 
 module PC_mux_sel_Gen #(
     parameter BIT_W = 32
 )(
-    input  jump;
-    input  branch;
-    input  alu_branch;
-    output  sel;
+    input  jump,
+    input  branch,
+    input  alu_branch,
+    output  sel
+);
+    reg sel;
 
-    assign sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 2'b00; // jump = 1，branch = 1，others = 0。因為上方的加法器 add sum 都會是跳轉的位址
-)
+    always @(*) begin    
+        sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0; // jump = 1，branch = 1，others = 0。adder_imm calculate jump or branch address
+    end
 endmodule
 
 module Mux2To1 #(
@@ -454,10 +505,11 @@ module Mux2To1 #(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     input               sel,
-    output [BIT_W-1:0]  out
-
-    assign out = sel ? in1 : in0;
+    output reg [BIT_W-1:0]  out
 );
+    always @(*) begin 
+       out = sel ? in1 : in0;
+    end
 endmodule
 
 module Mux3To1 #(
@@ -468,9 +520,12 @@ module Mux3To1 #(
     input  [BIT_W-1:0]  in2,
     input  [1:0]        sel,
     output [BIT_W-1:0]  out
-
-    assign out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
 );
+    reg [BIT_W-1:0] out;
+
+    always @(*) begin 
+        out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
+    end
 endmodule
 
 module Adder #(
@@ -479,20 +534,51 @@ module Adder #(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     output [BIT_W-1:0]  out
-
-    assign out = in0 + in1;
 );
+    reg [BIT_W-1:0] out;
+
+    always @(*) begin 
+        out = in0 + in1;
+    end
 endmodule
 
 module ALU_control #(
-    parameter BIT_W = 32
+    parameter BIT_W = 32,
+
+    parameter ALUOP_LOAD_STORE = 3'b000, // alu action is add
+    parameter ALUOP_OPETATION = 3'b001, // need check func3 and func7 to know which alu action to use
+    parameter ALUOP_IMM_OPETATION = 3'b010, // need check func3 to know which alu action to use
+    parameter ALUOP_BRANCH = 3'b011,  // need check func3 to know which alu action to use
+    parameter ALUOP_AUIPC = 3'b100, // alu action is add pc
+    parameter ALUOP_JAL_JALR = 3'b101,  // alu action is add pc
+    parameter ALUOP_ECALL = 3'b110, // THE end of program
+    parameter ALUOP_DONOTHING = 3'b111, // do nothing
+
+    parameter ALU_AND = 4'b0000,
+    parameter ALU_OR  = 4'b0001,
+    parameter ALU_ADD = 4'b0010,
+    parameter ALU_SUB = 4'b0011,
+    parameter ALU_SLL = 4'b0100,
+    parameter ALU_NOR = 4'b0101,
+    parameter ALU_XOR = 4'b0110,
+    parameter ALU_SRL = 4'b0111,
+    parameter ALU_SLT = 4'b1000,
+    parameter ALU_BEQ = 4'b1001,
+    parameter ALU_BNE = 4'b1010,
+    parameter ALU_BLT = 4'b1011,
+    parameter ALU_BGE = 4'b1100,
+    parameter ALU_MUL = 4'b1101,
+    parameter ALU_DONOTHING = 4'b1110
 )(
     input  [2:0]        alu_op,
     input  [2:0]        func3,
     input  [6:0]        func7,
+    input i_clk,
     output [3:0]        alu_signal // signal to alu
+);
+    reg [3:0] alu_signal;
 
-    always @(posedge clk) begin
+    always @(posedge i_clk) begin
         case(alu_op)
             ALUOP_LOAD_STORE: begin
                 alu_signal = ALU_ADD; // instr: ld、sd、jalr。alu action is add
@@ -556,19 +642,38 @@ module ALU_control #(
             end
         endcase
     end
-);
 endmodule
 
 module ALU #(
-    parameter BIT_W = 32
+    parameter BIT_W = 32,
+
+    parameter ALU_AND = 4'b0000,
+    parameter ALU_OR  = 4'b0001,
+    parameter ALU_ADD = 4'b0010,
+    parameter ALU_SUB = 4'b0011,
+    parameter ALU_SLL = 4'b0100,
+    parameter ALU_NOR = 4'b0101,
+    parameter ALU_XOR = 4'b0110,
+    parameter ALU_SRL = 4'b0111,
+    parameter ALU_SLT = 4'b1000,
+    parameter ALU_BEQ = 4'b1001,
+    parameter ALU_BNE = 4'b1010,
+    parameter ALU_BLT = 4'b1011,
+    parameter ALU_BGE = 4'b1100,
+    parameter ALU_MUL = 4'b1101,
+    parameter ALU_DONOTHING = 4'b1110
 )(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     input  [3:0]        alu_signal,
+    input i_clk,
     output [BIT_W-1:0]  alu_result,
-    output      alu_branch, // alu branch  signal
+    output      alu_branch // alu branch  signal
+);
+    reg alu_branch;
+    reg [BIT_W-1:0] alu_result;
 
-    always @(posedge clk) begin
+    always @(posedge i_clk) begin
         case(alu_signal)
             ALU_ADD: begin
                 alu_result = in0 + in1; // 先不想overflow的問題
@@ -576,7 +681,7 @@ module ALU #(
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
-                alu_branch_ = 0;
+                alu_branch = 0;
             end
             ALU_AND: begin
                 alu_result = in0 & in1;
@@ -584,7 +689,7 @@ module ALU #(
             end
             ALU_OR: begin
                 alu_result = in0 | in1;
-                alu_branch_ = 0;
+                alu_branch = 0;
             end
             ALU_XOR: begin
                 alu_result = in0 ^ in1;
@@ -632,7 +737,6 @@ module ALU #(
             end
         endcase
     end
-);
 endmodule
 
 module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
@@ -680,25 +784,27 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
 endmodule
 
 module data_memory #(
-    parameter BIT_W = 32
-    parameter BITS = 32;
-    parameter word_depth = 32;
+    parameter BIT_W = 32,
+    parameter BITS = 32,
+    parameter word_depth = 32
 )(  
     input [BIT_W-1:0] addr,
     input [BIT_W-1:0] wdata,
     input wen, // wen: 0:read | 1:write
-    output [BIT_W-1:0] rdata,
-
-    reg [BITS-1:0] mem [0:word_depth-1]; // 32 32-bit memory
-
-    if(wen) begin
-        mem[addr] = wdata;
-        rdata = 0; // default value
-    end
-    else begin
-        rdata = mem[addr];
-    end
+    output [BIT_W-1:0] rdata
 );
+    reg [BITS-1:0] mem [0:word_depth-1]; // 32 32-bit memory
+    reg [BITS-1:0] rdata;
+    
+    always @(*) begin 
+        if(wen) begin
+            mem[addr] = wdata;
+            rdata = 0; // default value
+        end
+        else begin
+            rdata = mem[addr];
+        end
+    end
 endmodule
 
 module MULDIV_unit(
