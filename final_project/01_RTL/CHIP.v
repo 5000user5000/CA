@@ -42,25 +42,31 @@ module CHIP #(                                                                  
     parameter ECALL_OPCODE = 7'b1110011;
 
     // alu control input
-    parameter ALUOP_LOAD_STORE_JALR = 3'b000; // alu action is add
+    parameter ALUOP_LOAD_STORE = 3'b000; // alu action is add
     parameter ALUOP_OPETATION = 3'b001; // need check func3 and func7 to know which alu action to use
     parameter ALUOP_IMM_OPETATION = 3'b010; // need check func3 to know which alu action to use
     parameter ALUOP_BRANCH = 3'b011;  // need check func3 to know which alu action to use
     parameter ALUOP_AUIPC = 3'100; // alu action is add pc
-    parameter ALUOP_JAL = 3'b101;  // alu action is add pc
+    parameter ALUOP_JAL_JALR = 3'b101;  // alu action is add pc
     parameter ALUOP_ECALL = 3'b110; // THE end of program
     parameter ALUOP_DONOTHING = 3'b111; // do nothing
 
-    // alu action (alu_signal)
+    // alu_signal
     parameter ALU_AND = 4'b0000;
     parameter ALU_OR  = 4'b0001;
     parameter ALU_ADD = 4'b0010;
-    parameter ALU_SUB = 4'b0110;
-    parameter ALU_SLL = 4'b0111;
-    parameter ALU_NOR = 4'b1100;
-    parameter ALU_XOR = 4'b1101;
-    parameter ALU_SRL = 4'b1110;
-    parameter ALU_SLT = 4'b1111;
+    parameter ALU_SUB = 4'b0011;
+    parameter ALU_SLL = 4'b0100;
+    parameter ALU_NOR = 4'b0101;
+    parameter ALU_XOR = 4'b0110;
+    parameter ALU_SRL = 4'b0111;
+    parameter ALU_SLT = 4'b1000;
+    parameter ALU_BEQ = 4'b1001;
+    parameter ALU_BNE = 4'b1010;
+    parameter ALU_BLT = 4'b1011;
+    parameter ALU_BGE = 4'b1100;
+    parameter ALU_DONOTHING = 4'b1101;
+
     //parameter ALU_SLTU = 4'b1111;
 
     
@@ -212,14 +218,13 @@ module CHIP #(                                                                  
         .addr   (alu_result),
         .wdata  (read_data2),
         .wen    (mem_write),
-        .cen    (mem_cen),
         .rdata  (data_mem_rdata)
     );
 
     // write_back wire connection
     Mux2To1 write_back_mux(
-        .in0    (data_mem_rdata),
-        .in1    (alu_result),
+        .in0    (alu_result),
+        .in1    (data_mem_rdata),
         .sel    (mem_to_reg),
         .out    (write_back)
     );
@@ -268,7 +273,7 @@ module Control(
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
                 rd_with_pc = 1; // need to use pc
-                alu_op = ALUOP_JAL;
+                alu_op = ALUOP_JAL_JALR;
             end
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
                 jump = 1; // need jump
@@ -279,7 +284,7 @@ module Control(
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
                 rd_with_pc = 1; // need to use pc
-                alu_op = ALUOP_LOAD_STORE_JALR;
+                alu_op = ALUOP_JAL_JALR;
             end
             BRANCH_OPCODE: begin 
                 jump = 0;
@@ -301,7 +306,7 @@ module Control(
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
                 rd_with_pc = 0;
-                alu_op = ALUOP_LOAD_STORE_JALR;
+                alu_op = ALUOP_LOAD_STORE;
             end
             STORE_OPCODE: begin // M[reg[rs1] + imm] = reg[rs2];
                 jump = 0;
@@ -312,7 +317,7 @@ module Control(
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
                 rd_with_pc = 0;
-                alu_op = ALUOP_LOAD_STORE_JALR;
+                alu_op = ALUOP_LOAD_STORE;
             end
             OP_IMM_OPCODE: begin
                 jump = 0;
@@ -448,7 +453,7 @@ module ALU_control #(
 
     always @(posedge clk) begin
         case(alu_op)
-            ALUOP_LOAD_STORE_JALR: begin
+            ALUOP_LOAD_STORE: begin
                 alu_signal = ALU_ADD; // instr: ld、sd、jalr。alu action is add
             end
             ALUOP_OPETATION: begin
@@ -484,10 +489,10 @@ module ALU_control #(
             end
             ALUOP_BRANCH: begin
                 case (func3)
-                    3'b000: alu_signal = ALU_AND; // beq
-                    3'b001: alu_signal = ALU_OR; // bne
-                    3'b100: alu_signal = ALU_SLT; // blt
-                    3'b101: alu_signal = ALU_SUB; // bge
+                    3'b000: alu_signal = ALU_BEQ; // beq
+                    3'b001: alu_signal = ALU_BNE; // bne
+                    3'b100: alu_signal = ALU_BLT; // blt
+                    3'b101: alu_signal = ALU_BGE; // bge
                     // 3'b110: alu_signal = ALU_SLT; // bltu，not used
                     // 3'b111: alu_signal = ALU_SRL; // bgeu
                     default: alu_signal = ALU_ADD; // default alu action is add
@@ -496,14 +501,14 @@ module ALU_control #(
             ALUOP_AUIPC: begin
                 alu_signal = ALU_ADD; // instr: auipc。alu action is add
             end
-            ALUOP_JAL: begin
-                alu_signal = ALU_ADD; // instr: jal。alu action is add
+            ALUOP_JAL_JALR: begin
+                alu_signal = ALU_DONOTHING; // instr: jal。alu action is add
             end
             ALUOP_ECALL: begin
-                alu_signal = ALU_ADD; // instr: ecall。default alu action is add
+                alu_signal = ALU_DONOTHING; // instr: ecall。default alu action is add
             end
             default: begin
-                alu_signal = ALU_ADD; // JUST a default value
+                alu_signal = ALU_DONOTHING; // JUST a default value
             end
         endcase
     end
@@ -523,38 +528,59 @@ module ALU #(
         case(alu_signal)
             ALU_ADD: begin
                 alu_result = in0 + in1;
+                zero = 0;
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
-                zero = (alu_result >= 0) ? 1 : 0; // branch signal，alu_result > 0 -> bge
+                zero = 0;
             end
             ALU_AND: begin
                 alu_result = in0 & in1;
-                //zero = (alu_result == 0) ? 1 : 0; // branch signal，beq。 wrong because 0000 & 0000 = 0，but should be true
-                zero = (in0 == in1) ? 1 : 0; // branch signal，beq
+                zero = 0;
             end
             ALU_OR: begin
                 alu_result = in0 | in1;
-                zero = (in0 != in1) ? 1 : 0; // branch signal，bne
+                zero = 0;
             end
             ALU_XOR: begin
                 alu_result = in0 ^ in1;
+                zero = 0;
             end
             ALU_SLL: begin
                 alu_result = in0 << in1;
+                zero = 0;
             end
             ALU_SRL: begin
                 alu_result = in0 >> in1;
+                zero = 0;
             end
             ALU_SLT: begin
                 alu_result = (in0 < in1) ? 1 : 0;
-                zero = (alu_result == 1) ? 1 : 0; // branch signal，blt
+                zero = 0;
             end
             ALU_NOR: begin
                 alu_result = ~(in0 | in1);
+                zero = 0;
+            end
+            ALU_BEQ: begin
+                alu_result = 0;
+                zero = (in0 == in1) ? 1 : 0; 
+            end
+            ALU_BNE: begin
+                alu_result = 0;
+                zero = (in0 != in1) ? 1 : 0; 
+            end
+            ALU_BLT: begin
+                alu_result = 0;
+                zero = (in0 < in1) ? 1 : 0; 
+            end
+            ALU_BGE: begin
+                alu_result = 0;
+                zero = (in0 >= in1) ? 1 : 0; 
             end
             default: begin
                 alu_result = in0 + in1;
+                zero = 0;
             end
         endcase
     end
@@ -613,24 +639,17 @@ module data_memory #(
     input [BIT_W-1:0] addr,
     input [BIT_W-1:0] wdata,
     input wen, // wen: 0:read | 1:write
-    input cen, // cen: 0:inactive | 1:active (enable memory function?) 
     output [BIT_W-1:0] rdata,
 
     reg [BITS-1:0] mem [0:word_depth-1]; // 32 32-bit memory
 
-    if(cen) begin
-        if(wen) begin
-            mem[addr] = wdata;
-            rdata = 0; // default value
-        end
-        else begin
-            rdata = mem[addr];
-        end
+    if(wen) begin
+        mem[addr] = wdata;
+        rdata = 0; // default value
     end
     else begin
-        rdata = 0;
+        rdata = mem[addr];
     end
-
 );
 endmodule
 
