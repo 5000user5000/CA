@@ -78,14 +78,14 @@ module CHIP #(                                                                  
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
     
     // TODO: any declaration
-        reg [BIT_W-1:0] PC, next_PC;
+        reg [BIT_W-1:0] PC = 32'h00010000 , next_PC;
         wire mem_cen, mem_wen;
         wire [BIT_W-1:0] mem_addr, mem_wdata, mem_rdata;
         wire mem_stall;
 
         // PC wire
-        wire [BIT_W-1:0] PC_add_4, PC_add_imm, alu_result;
-        wire PC_mux_sel, next_pc_wire;
+        wire [BIT_W-1:0] PC_add_4, PC_add_imm, alu_result,next_pc_wire;
+        wire PC_mux_sel;
         
         // regfile wire
         wire [BIT_W-1:0] read_data1, read_data2;
@@ -93,7 +93,7 @@ module CHIP #(                                                                  
         // control input wire
         //wire [6:0] opcode;
         // control output wire
-        wire jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
+        wire jump , branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
         wire [1:0] rd_with_pc; // rd 值是否要用到pc
         wire [2:0] alu_op;
 
@@ -117,13 +117,35 @@ module CHIP #(                                                                  
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // TODO: any wire assignment
+    // 非時序，不用 <=
+    // assign PC_add_4 = PC + 32'h4;
+    // assign pc_imm_input1 = jalr_signal? PC:PC_add_4;
+    // assign PC_mux_sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0;
+    // assign PC_add_imm = pc_imm_input1 + imm;
+    // assign next_pc_wire = PC_mux_sel ? PC_add_imm : PC_add_4;
+
+    assign PC_mux_sel = 0; // default value
+    assign jump = 0; // default value
+    assign branch = 0; // default value
+    assign alu_branch = 0; // default value
+    assign mem_read = 0; // default value   
+    assign mem_write = 0; // default value
+    assign reg_write = 0; // default value
+    assign mem_to_reg = 0; // default value
+    assign alu_src = 0; // default value
+    assign jalr_signal = 0; // default value
+    assign rd_with_pc = 2'b00; // default value
+
+    assign o_IMEM_cen = 1'b1; // instruction memory enable
+
+    assign  o_IMEM_addr = PC; // 更新instruction memory address
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Submoddules
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
-    // PC_4_adder wire connection
+    //PC_4_adder wire connection
     Adder PC_4_adder(
         .in0    (PC),
         .in1    (32'h4),
@@ -155,26 +177,13 @@ module CHIP #(                                                                  
         .sel                (PC_mux_sel)
     );
 
-    // PC_mux wire connection，decide next_PC value
+    //PC_mux wire connection，decide next_PC value
     Mux2To1 PC_mux(
+        .i_clk      (i_clk),
         .in0    (PC_add_4),
         .in1    (PC_add_imm), // jump or branch
         .sel    (PC_mux_sel),
         .out    (next_pc_wire)
-    );
-
-
-    // TODO: Reg_file wire connection
-    Reg_file reg0(               
-        .i_clk  (i_clk),             
-        .i_rst_n(i_rst_n),         
-        .wen    (reg_write),          
-        .rs1    (i_IMEM_data[19:15]),                
-        .rs2    (i_IMEM_data[24:20]),                
-        .rd     (i_IMEM_data[11:7]),                 
-        .wdata  (reg_wdata),             // data memory output or PC+4
-        .rdata1 (read_data1),           
-        .rdata2 (read_data2)
     );
 
     // Control wire connection
@@ -194,6 +203,22 @@ module CHIP #(                                                                  
         .o_finish   (o_finish)
     );
 
+
+    // TODO: Reg_file wire connection
+    Reg_file reg0(               
+        .i_clk  (i_clk),             
+        .i_rst_n(i_rst_n),         
+        .wen    (reg_write),          
+        .rs1    (i_IMEM_data[19:15]),                
+        .rs2    (i_IMEM_data[24:20]),                
+        .rd     (i_IMEM_data[11:7]),                 
+        .wdata  (reg_wdata),             // data memory output or PC+4
+        .rdata1 (read_data1),           
+        .rdata2 (read_data2)
+    );
+
+
+
     // alu_control wire connection
     ALU_control alu_control0(
         .i_clk      (i_clk),
@@ -202,6 +227,8 @@ module CHIP #(                                                                  
         .func7      (i_IMEM_data[31:25]),
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
     );
+
+    //assign reg_wdata = (rd_with_pc == 2'b00) ? write_back : (rd_with_pc == 2'b01) ? PC_add_4 : PC_add_imm;
 
     // reg_wdata_mux wire connection (最終寫回regfile的值)
     Mux3To1 reg_wdata_mux(
@@ -215,7 +242,7 @@ module CHIP #(                                                                  
     // alu wire connection
     ALU alu0(
         .i_clk  (i_clk),
-        .in0    (alu_input1),
+        .in0    (read_data1),
         .in1    (alu_input2),
         .alu_signal (alu_signal),
         .alu_result    (alu_result),
@@ -230,8 +257,10 @@ module CHIP #(                                                                  
         .imm    (imm)
     );
 
+
     // read_data2_imm_mux wire connection
     Mux2To1 read_data2_imm_mux(
+        .i_clk      (i_clk),
         .in0    (read_data2),
         .in1    (imm),
         .sel    (alu_src),
@@ -246,8 +275,10 @@ module CHIP #(                                                                  
         .rdata  (data_mem_rdata)
     );
 
+
     // write_back wire connection (data memory 旁邊的mux，並非最終寫回去reg的訊號)
     Mux2To1 write_back_mux(
+        .i_clk      (i_clk),
         .in0    (alu_result),
         .in1    (data_mem_rdata),
         .sel    (mem_to_reg),
@@ -259,10 +290,6 @@ module CHIP #(                                                                  
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // Todo: any combinational/sequential circuit
-    // logging for debug
-    always @(*) begin
-        $display("++++++++++++ %b ++++++++++",i_IMEM_data);
-    end
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
@@ -270,13 +297,17 @@ module CHIP #(                                                                  
         end
         else begin
             PC <= next_pc_wire;
-            //PC <= next_PC;
         end
+       $display("PC = %h, next_PC = %h", PC, next_pc_wire);
+       $display("PC_add_4 = %h, PC_add_imm = %h, PC_mux_sel = %h", PC_add_4, PC_add_imm, PC_mux_sel);
+       $display("chip.v i_IMEM_data = %h", i_IMEM_data);
     end
+    
+
 endmodule
 
 
-module Control (opcode, i_clk, jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal, rd_with_pc, alu_op, o_finish);
+module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal, rd_with_pc, alu_op, o_finish);
 
     input [6:0] opcode;
     input i_clk;
@@ -307,8 +338,8 @@ module Control (opcode, i_clk, jump, branch, mem_read, mem_write, reg_write, mem
     localparam  ALUOP_DONOTHING = 3'b111; // do nothing
 
 
-    always @(posedge i_clk) begin
-        // $display("Control opcode = %b", opcode);
+    always @(negedge i_clk) begin
+        $display("Control opcode = %b", opcode);
         case(opcode)
             AUIPC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
                 jump = 0;
@@ -439,7 +470,7 @@ module Control (opcode, i_clk, jump, branch, mem_read, mem_write, reg_write, mem
                 rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_DONOTHING;
-                //$display("default do nothing\n");
+                $display("default do nothing\n");
             end
         endcase
     end
@@ -464,7 +495,7 @@ module Imm_Gen #(
 
     reg [BIT_W-1:0] imm;
 
-    always @(posedge i_clk) begin
+    always @(negedge i_clk) begin
         case(opcode)
             AUIPC_OPCODE: begin 
                 imm = {inst[31:12], 12'b0};
@@ -472,24 +503,31 @@ module Imm_Gen #(
             end
             JAL_OPCODE: begin 
                 imm = {11'b0, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
+                $display("JAL imm = %d\n", imm);
             end
             JALR_OPCODE: begin 
                 imm = {20'b0, inst[31:20]};
+                $display("JALR imm = %d\n", imm);
             end
             BRANCH_OPCODE: begin 
                 imm = {19'b0, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
+                $display("BRANCH imm = %d\n", imm);
             end
             LOAD_OPCODE: begin 
                 imm = {20'b0, inst[31:20]};
+                $display("LOAD imm = %d\n", imm);
             end
             STORE_OPCODE: begin 
                 imm = {20'b0, inst[31:25], inst[11:7]};
+                $display("STORE imm = %d\n", imm);
             end
             OP_IMM_OPCODE: begin
                 imm = {20'b0, inst[31:20]};
+                $display("OP_IMM imm = %d\n", imm);
             end
             default: begin
                 imm = {32'b0};
+                $display("default imm = %d\n", imm);
             end
         endcase
     end
@@ -507,7 +545,16 @@ module PC_mux_sel_Gen #(
     reg sel;
 
     always @(*) begin    
-        sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0; // jump = 1，branch = 1，others = 0。adder_imm calculate jump or branch address
+        //sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0; // jump = 1，branch = 1，others = 0。adder_imm calculate jump or branch address
+        if(jump == 1) begin
+            sel = 1'b1;
+        end
+        else if(branch == 1 && alu_branch == 1) begin
+            sel = 1'b1;
+        end
+        else begin
+            sel = 1'b0;
+        end
     end
 endmodule
 
@@ -517,10 +564,19 @@ module Mux2To1 #(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     input               sel,
-    output reg [BIT_W-1:0]  out
+    input i_clk,
+    output  [BIT_W-1:0]  out
 );
-    always @(*) begin 
-       out = sel ? in1 : in0;
+    reg [BIT_W-1:0] out;
+    always @(negedge i_clk) begin 
+        if(sel == 1'b1) begin
+            out <= in1;
+        end
+        else begin
+            out <= in0;
+        end
+       //out = sel ? in1 : in0;
+       $display("Mux2To1 in0 = %h, in1 = %h, out = %h", in0, in1, out);
     end
 endmodule
 
@@ -536,7 +592,16 @@ module Mux3To1 #(
     reg [BIT_W-1:0] out;
 
     always @(*) begin 
-        out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
+        //out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
+        if(sel == 2'b01) begin
+            out = in1;
+        end
+        else if(sel == 2'b10) begin
+            out = in2;
+        end
+        else begin
+            out = in0;
+        end
     end
 endmodule
 
@@ -591,7 +656,7 @@ module ALU_control #(
 );
     reg [3:0] alu_signal;
 
-    always @(posedge i_clk) begin
+    always @(*) begin
        //$display("ALU_control alu_op = %b, func3 = %b, func7 = %b", alu_op, func3, func7);
         case(alu_op)
             ALUOP_LOAD_STORE: begin
@@ -688,13 +753,13 @@ module ALU #(
     reg alu_branch;
     reg [BIT_W-1:0] alu_result;
 
-    always @(posedge i_clk) begin
+    always @(*) begin
         //$display("ALU in0 = %d, in1 = %d, alu_signal = %b", in0, in1, alu_signal);
         case(alu_signal)
             ALU_ADD: begin
                 alu_result = in0 + in1; // 先不想overflow的問題
                 alu_branch = 0;
-                $display("ALU_ADD, alu result = %d\n", alu_result);
+                $display("ALU_ADD   in0 = %d, in1 = %d, alu result = %d\n", in0, in1, alu_result);
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
