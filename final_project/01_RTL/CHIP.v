@@ -93,8 +93,7 @@ module CHIP #(                                                                  
         // control input wire
         //wire [6:0] opcode;
         // control output wire
-        wire jump , branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
-        wire [1:0] rd_with_pc; // rd 值是否要用到pc
+        wire  jump,branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
         wire [2:0] alu_op;
 
         // imm_gen wire
@@ -118,23 +117,18 @@ module CHIP #(                                                                  
 
     // TODO: any wire assignment
     // 非時序，不用 <=
-    // assign PC_add_4 = PC + 32'h4;
-    // assign pc_imm_input1 = jalr_signal? PC:PC_add_4;
-    // assign PC_mux_sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0;
-    // assign PC_add_imm = pc_imm_input1 + imm;
-    // assign next_pc_wire = PC_mux_sel ? PC_add_imm : PC_add_4;
 
-    assign PC_mux_sel = 0; // default value
-    assign jump = 0; // default value
-    assign branch = 0; // default value
-    assign alu_branch = 0; // default value
-    assign mem_read = 0; // default value   
-    assign mem_write = 0; // default value
-    assign reg_write = 0; // default value
-    assign mem_to_reg = 0; // default value
-    assign alu_src = 0; // default value
-    assign jalr_signal = 0; // default value
-    assign rd_with_pc = 2'b00; // default value
+
+    // assign PC_mux_sel = 0; // default value
+    // assign jump = 0; // default value
+    // assign branch = 0; // default value
+    // assign alu_branch = 0; // default value
+    // assign mem_read = 0; // default value   
+    // assign mem_write = 0; // default value
+    // assign reg_write = 0; // default value
+    // assign mem_to_reg = 0; // default value
+    // assign alu_src = 0; // default value
+    // assign jalr_signal = 0; // default value
 
     assign o_IMEM_cen = 1'b1; // instruction memory enable
 
@@ -179,10 +173,9 @@ module CHIP #(                                                                  
 
     //PC_mux wire connection，decide next_PC value
     Mux2To1 PC_mux(
-        .i_clk      (i_clk),
         .in0    (PC_add_4),
-        .in1    (PC_add_imm), // jump or branch
-        .sel    (PC_mux_sel),
+        .in1    (PC_add_imm), // branch、jal。 jalr rd[rs1]+imm，雖說沒用PC，但是PC_imm1 那裏 .in1 就切換到 read_data1
+        .sel    (PC_mux_sel), 
         .out    (next_pc_wire)
     );
 
@@ -199,7 +192,6 @@ module CHIP #(                                                                  
         .alu_src    (alu_src),
         .alu_op     (alu_op),
         .jalr_signal(jalr_signal),
-        .rd_with_pc (rd_with_pc),
         .o_finish   (o_finish)
     );
 
@@ -228,14 +220,13 @@ module CHIP #(                                                                  
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
     );
 
-    //assign reg_wdata = (rd_with_pc == 2'b00) ? write_back : (rd_with_pc == 2'b01) ? PC_add_4 : PC_add_imm;
 
     // reg_wdata_mux wire connection (最終寫回regfile的值)
     Mux3To1 reg_wdata_mux(
         .in0    (write_back),
         .in1    (PC_add_4),  // jal、jalr
         .in2    (PC_add_imm), // auipc
-        .sel    (rd_with_pc), // rd 值是否要用到pc
+        .sel    (i_IMEM_data[6:0]), // rd 值是否要用到pc
         .out    (reg_wdata)
     );
 
@@ -260,7 +251,7 @@ module CHIP #(                                                                  
 
     // read_data2_imm_mux wire connection
     Mux2To1 read_data2_imm_mux(
-        .i_clk      (i_clk),
+        //.i_clk      (i_clk),
         .in0    (read_data2),
         .in1    (imm),
         .sel    (alu_src),
@@ -278,7 +269,7 @@ module CHIP #(                                                                  
 
     // write_back wire connection (data memory 旁邊的mux，並非最終寫回去reg的訊號)
     Mux2To1 write_back_mux(
-        .i_clk      (i_clk),
+        //.i_clk      (i_clk),
         .in0    (alu_result),
         .in1    (data_mem_rdata),
         .sel    (mem_to_reg),
@@ -300,19 +291,28 @@ module CHIP #(                                                                  
         end
        $display("PC = %h, next_PC = %h", PC, next_pc_wire);
        $display("PC_add_4 = %h, PC_add_imm = %h, PC_mux_sel = %h", PC_add_4, PC_add_imm, PC_mux_sel);
+       $display("jump = %h , branch = %h , alu_branch = %h , PC_mux_sel = %h", jump, branch, alu_branch, PC_mux_sel);
+       $display("imm = %h", imm);
        $display("chip.v i_IMEM_data = %h", i_IMEM_data);
+       $display("pc_imm_input1 = %h , read_data1 = %h , jalr_signal = %h", pc_imm_input1, read_data1, jalr_signal);
+
+       $display("alu_signal = %h", alu_signal);
+       $display("reg_wdata = %h",  reg_wdata);
+
+       $display("read_data2 = %h, alu_src = %h, alu_input2 = %h", read_data2, alu_src, alu_input2);
+       $display("alu_result = %h, data_mem_rdata = %h, mem_to_reg = %h, write_back_mux = %h", alu_result, data_mem_rdata, mem_to_reg, write_back);
+        
     end
     
 
 endmodule
 
 
-module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal, rd_with_pc, alu_op, o_finish);
+module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal, alu_op, o_finish);
 
     input [6:0] opcode;
     input i_clk;
-    output reg jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
-    output reg [1:0] rd_with_pc;
+    output reg  jump,branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
     output reg [2:0] alu_op;
     output reg o_finish; // finish program
 
@@ -338,7 +338,7 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
     localparam  ALUOP_DONOTHING = 3'b111; // do nothing
 
 
-    always @(negedge i_clk) begin
+    always @(*) begin
         $display("Control opcode = %b", opcode);
         case(opcode)
             AUIPC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
@@ -349,33 +349,30 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b10; // aupic
                 jalr_signal = 0;
                 alu_op = ALUOP_AUIPC;
                 $display("AUIPC\n");
             end
             JAL_OPCODE: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
-                jump = 1; // need jump
+                jump = 1; // need jal
                 branch = 0;
                 mem_read = 0;
                 mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b01; //  pc+4
                 jalr_signal = 0;
                 alu_op = ALUOP_JAL_JALR;
                 $display("JAL\n");
             end
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
-                jump = 1; // need jump
+                jump = 1; // need jalr
                 branch = 0;
                 mem_read = 0;
                 mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b01; // need to use pc
                 jalr_signal = 1;
                 alu_op = ALUOP_JAL_JALR;
                 $display("JALR\n");
@@ -388,7 +385,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_BRANCH;
                 $display("BRANCH\n");
@@ -401,7 +397,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 1; // need to write rd
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_LOAD_STORE;
                 $display("LOAD\n");
@@ -414,7 +409,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_LOAD_STORE;
                 $display("STORE\n");
@@ -427,7 +421,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_IMM_OPETATION;
                 $display("OP_IMM\n");
@@ -440,7 +433,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_OPETATION; 
                 $display("OP\n");
@@ -454,7 +446,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_ECALL;
                 $display("ECALL\n");
@@ -467,7 +458,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
-                rd_with_pc = 2'b00;
                 jalr_signal = 0;
                 alu_op = ALUOP_DONOTHING;
                 $display("default do nothing\n");
@@ -542,18 +532,13 @@ module PC_mux_sel_Gen #(
     input  alu_branch,
     output  sel
 );
-    reg sel;
+    reg   sel;
 
     always @(*) begin    
         //sel = jump ? 1'b1 : (branch && alu_branch) ? 1'b1 : 1'b0; // jump = 1，branch = 1，others = 0。adder_imm calculate jump or branch address
-        if(jump == 1) begin
-            sel = 1'b1;
-        end
-        else if(branch == 1 && alu_branch == 1) begin
-            sel = 1'b1;
-        end
-        else begin
-            sel = 1'b0;
+        sel = jump; // jump = 1 => jalr, jal , jump = 0 => others
+        if(branch == 1 && alu_branch == 1) begin // branch = 1，alu_branch = 1，jump
+            sel = 1;
         end
     end
 endmodule
@@ -564,19 +549,19 @@ module Mux2To1 #(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     input               sel,
-    input i_clk,
+    //input i_clk,
     output  [BIT_W-1:0]  out
 );
     reg [BIT_W-1:0] out;
-    always @(negedge i_clk) begin 
+    always @(*) begin 
         if(sel == 1'b1) begin
-            out <= in1;
+            out = in1;
         end
         else begin
-            out <= in0;
+            out = in0;
         end
        //out = sel ? in1 : in0;
-       $display("Mux2To1 in0 = %h, in1 = %h, out = %h", in0, in1, out);
+       //$display("Mux2To1 in0 = %h, in1 = %h, out = %h", in0, in1, out);
     end
 endmodule
 
@@ -586,18 +571,18 @@ module Mux3To1 #(
     input  [BIT_W-1:0]  in0,
     input  [BIT_W-1:0]  in1,
     input  [BIT_W-1:0]  in2,
-    input  [1:0]        sel,
+    input  [6:0]        sel,
     output [BIT_W-1:0]  out
 );
     reg [BIT_W-1:0] out;
 
     always @(*) begin 
         //out = (sel == 2'b00) ? in0 : (sel == 2'b01) ? in1 : in2;
-        if(sel == 2'b01) begin
-            out = in1;
-        end
-        else if(sel == 2'b10) begin
+        if(sel == 7'b0010111) begin // AUIPC
             out = in2;
+        end
+        else if(sel == 7'b1101111 | sel == 7'b1100111) begin // jal jalr
+            out = in1;
         end
         else begin
             out = in0;
@@ -681,7 +666,7 @@ module ALU_control #(
                     3'b111: alu_signal = ALU_AND;
                     default: alu_signal = ALU_DONOTHING;
                 endcase
-                $display("func3 = %d, alu_signal = %d", func3, alu_signal);
+                $display("func3 = %b, alu_signal = %b", func3, alu_signal);
                 end
             end
             ALUOP_IMM_OPETATION: begin
