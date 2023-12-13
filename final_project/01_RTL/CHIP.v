@@ -492,7 +492,12 @@ module Imm_Gen #(
                 $display("AUIPC imm = %d\n", imm);
             end
             JAL_OPCODE: begin 
-                imm = {11'b0, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
+                if(inst[31] == 1'b0) begin
+                    imm = {11'b0, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
+                end
+                else begin
+                    imm = {{11{1'b1}}, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0}; // 2's complement
+                end
                 $display("JAL imm = %d\n", imm);
             end
             JALR_OPCODE: begin 
