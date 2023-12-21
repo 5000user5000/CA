@@ -93,7 +93,7 @@ module CHIP #(                                                                  
         // control input wire
         //wire [6:0] opcode;
         // control output wire
-        wire  jump,branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
+        wire  jump,branch, reg_write, mem_to_reg, alu_src, jalr_signal;
         wire [2:0] alu_op;
 
         // imm_gen wire
@@ -108,16 +108,17 @@ module CHIP #(                                                                  
         wire [BIT_W-1:0] pc_imm_input1;
 
         // data memory wire
-        wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
+        //wire [BIT_W-1:0] data_mem_rdata; // read data from data memory
         wire [BIT_W-1:0] write_back,reg_wdata; // write_back" is the output of "write_back_mux (WB)," and "reg_wdata" is the final value written into the regfile
+        
+
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // TODO: any wire assignment
-    // 非時序，不用 <=
-
+    // assign 是連續指派，一旦有變動，就會立刻更新，不用時鐘觸發
 
     // assign PC_mux_sel = 0; // default value
     // assign jump = 0; // default value
@@ -131,8 +132,10 @@ module CHIP #(                                                                  
     // assign jalr_signal = 0; // default value
 
     assign o_IMEM_cen = 1'b1; // instruction memory enable
+    //assign o_DMEM_cen = 1'b1; // data memory enable
 
     assign  o_IMEM_addr = PC; // 更新instruction memory address
+
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Submoddules
@@ -185,8 +188,6 @@ module CHIP #(                                                                  
         .i_clk      (i_clk),
         .jump       (jump),
         .branch     (branch),
-        .mem_read   (mem_read),
-        .mem_write  (mem_write),
         .reg_write  (reg_write),
         .mem_to_reg (mem_to_reg),
         .alu_src    (alu_src),
@@ -260,10 +261,14 @@ module CHIP #(                                                                  
 
     // data_memory wire connection
     data_memory data_memory0(
-        .addr   (alu_result),
-        .wdata  (read_data2),
-        .wen    (mem_write),
-        .rdata  (data_mem_rdata)
+        .i_clk      (i_clk),
+        .opcode     (i_IMEM_data[6:0]),
+        .cen   (o_DMEM_cen), //o_DMEM_addr
+        .wen    (o_DMEM_wen),
+        .addr   (o_DMEM_addr),
+        .addr_value   (alu_result),
+        .wdata  (o_DMEM_wdata),
+        .wdata_value  (read_data2) 
     );
 
 
@@ -271,16 +276,19 @@ module CHIP #(                                                                  
     Mux2To1 write_back_mux(
         //.i_clk      (i_clk),
         .in0    (alu_result),
-        .in1    (data_mem_rdata),
+        .in1    (i_DMEM_rdata),
         .sel    (mem_to_reg),
-        .out    (write_back)
+        .out    (write_back) //最後寫入regfile的值是 reg_wdata，而不是 write_back
     );
+
+
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Always Blocks
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // Todo: any combinational/sequential circuit
+
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
@@ -290,17 +298,18 @@ module CHIP #(                                                                  
             PC <= next_pc_wire;
         end
        $display("PC = %h, next_PC = %h", PC, next_pc_wire);
-       $display("PC_add_4 = %h, PC_add_imm = %h, PC_mux_sel = %h", PC_add_4, PC_add_imm, PC_mux_sel);
-       $display("jump = %h , branch = %h , alu_branch = %h , PC_mux_sel = %h", jump, branch, alu_branch, PC_mux_sel);
+       //$display("PC_add_4 = %h, PC_add_imm = %h, PC_mux_sel = %h", PC_add_4, PC_add_imm, PC_mux_sel);
+       //$display("jump = %h , branch = %h , alu_branch = %h , PC_mux_sel = %h", jump, branch, alu_branch, PC_mux_sel);
        $display("imm = %h", imm);
-       $display("chip.v i_IMEM_data = %h", i_IMEM_data);
-       $display("pc_imm_input1 = %h , read_data1 = %h , jalr_signal = %h", pc_imm_input1, read_data1, jalr_signal);
+       //$display("chip.v i_IMEM_data = %h", i_IMEM_data);
+       //$display("pc_imm_input1 = %h , read_data1 = %h , jalr_signal = %h", pc_imm_input1, read_data1, jalr_signal);
 
-       $display("alu_signal = %h", alu_signal);
-       $display("reg_wdata = %h",  reg_wdata);
-
-       $display("read_data2 = %h, alu_src = %h, alu_input2 = %h", read_data2, alu_src, alu_input2);
-       $display("alu_result = %h, data_mem_rdata = %h, mem_to_reg = %h, write_back_mux = %h", alu_result, data_mem_rdata, mem_to_reg, write_back);
+       //$display("alu_signal = %h", alu_signal);
+       $display("reg_wdata = %h , reg_write = %h",  reg_wdata , reg_write);
+       $display("o_DMEM_wen = %h , o_DMEM_cen = %h", o_DMEM_wen, o_DMEM_cen);
+        $display("o_DMEM_addr = %h", o_DMEM_addr);
+       //$display("read_data2 = %h, alu_src = %h, alu_input2 = %h", read_data2, alu_src, alu_input2);
+       $display("alu_result = %h, i_DMEM_rdata = %h, mem_to_reg = %h, write_back_mux = %h", alu_result, i_DMEM_rdata, mem_to_reg, write_back);
         
     end
     
@@ -308,11 +317,11 @@ module CHIP #(                                                                  
 endmodule
 
 
-module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal, alu_op, o_finish);
+module Control (opcode, i_clk ,jump, branch, reg_write, mem_to_reg, alu_src, jalr_signal, alu_op, o_finish);
 
     input [6:0] opcode;
     input i_clk;
-    output reg  jump,branch, mem_read, mem_write, reg_write, mem_to_reg, alu_src, jalr_signal;
+    output reg  jump,branch, reg_write, mem_to_reg, alu_src, jalr_signal;
     output reg [2:0] alu_op;
     output reg o_finish; // finish program
 
@@ -344,8 +353,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             AUIPC_OPCODE: begin // reg[rd] = pc + {imm, 12'b0};
                 jump = 0;
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
@@ -356,8 +363,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             JAL_OPCODE: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
                 jump = 1; // need jal
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
@@ -368,8 +373,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             JALR_OPCODE: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
                 jump = 1; // need jalr
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
@@ -380,8 +383,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             BRANCH_OPCODE: begin 
                 jump = 0;
                 branch = 1; // need branch
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
@@ -392,8 +393,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             LOAD_OPCODE: begin // reg[rd] = M[reg[rs1] + imm];
                 jump = 0;
                 branch = 0;
-                mem_read = 1; // need to read memory
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 1; // need to use memory data 
                 alu_src = 1; // need to use imm
@@ -404,8 +403,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             STORE_OPCODE: begin // M[reg[rs1] + imm] = reg[rs2];
                 jump = 0;
                 branch = 0; 
-                mem_read = 0;
-                mem_write = 1; // need to write memory
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
@@ -416,8 +413,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             OP_IMM_OPCODE: begin
                 jump = 0;
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm
@@ -428,8 +423,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             OP_OPCODE: begin
                 jump = 0;
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 0;
@@ -441,8 +434,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
                 o_finish = 1; // finish program
                 jump = 0;
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
@@ -453,8 +444,6 @@ module Control (opcode, i_clk ,jump, branch, mem_read, mem_write, reg_write, mem
             default: begin
                 jump = 0;
                 branch = 0;
-                mem_read = 0;
-                mem_write = 0;
                 reg_write = 0;
                 mem_to_reg = 0;
                 alu_src = 0;
@@ -498,7 +487,7 @@ module Imm_Gen #(
                 else begin
                     imm = {{11{1'b1}}, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0}; // 2's complement
                 end
-                $display("JAL imm = %d\n", imm);
+                $display("JAL imm = %h\n", imm);
             end
             JALR_OPCODE: begin 
                 imm = {20'b0, inst[31:20]};
@@ -749,12 +738,12 @@ module ALU #(
             ALU_ADD: begin
                 alu_result = in0 + in1; // 先不想overflow的問題
                 alu_branch = 0;
-                $display("ALU_ADD   in0 = %d, in1 = %d, alu result = %d\n", in0, in1, alu_result);
+                $display("ALU_ADD   in0 = %h, in1 = %h, alu result = %h\n", in0, in1, alu_result);
             end
             ALU_SUB: begin
                 alu_result = in0 - in1;
                 alu_branch = 0;
-                $display("ALU_SUB, alu result = %d\n", alu_result);
+                $display("ALU_SUB, alu result = %h\n", alu_result);
             end
             ALU_AND: begin
                 alu_result = in0 & in1;
@@ -859,27 +848,36 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
 endmodule
 
 module data_memory #(
-    parameter BIT_W = 32,
-    parameter BITS = 32,
-    parameter word_depth = 32
+    parameter BIT_W = 32
 )(  
-    input [BIT_W-1:0] addr,
-    input [BIT_W-1:0] wdata,
-    input wen, // wen: 0:read | 1:write
-    output [BIT_W-1:0] rdata
+    input  i_clk,
+    input  [6:0]        opcode,
+    output  cen, // enable data memory
+    output  wen, // write data to data memory
+    output  [BIT_W-1:0]  addr,
+    input  [BIT_W-1:0]  addr_value,
+    output  [BIT_W-1:0]  wdata,
+    input  [BIT_W-1:0]  wdata_value
 );
-    reg [BITS-1:0] mem [0:word_depth-1]; // 32 32-bit memory
-    reg [BITS-1:0] rdata;
-    
-    always @(*) begin 
-        if(wen) begin
-            mem[addr] = wdata;
-            rdata = 0; // default value
+    reg [BIT_W-1:0] addr, wdata;
+    reg cen, wen;
+
+    always @(*) begin //先不考慮stall
+        if(opcode == 7'b0000011) begin // load
+            cen = 1'b1;
+            wen = 1'b0;
+        end
+        else if(opcode == 7'b0100011) begin // store
+            cen = 1'b1;
+            wen = 1'b1;
         end
         else begin
-            rdata = mem[addr];
+            cen = 1'b0;
+            wen = 1'b0;
         end
-    end
+        addr = addr_value ; //- 32'h00010064 ?
+        wdata = wdata_value;
+        end
 endmodule
 
 module MULDIV_unit(
