@@ -54,6 +54,15 @@ module CHIP #(                                                                  
     // ALU
     wire [BIT_W-1:0] alu_input1, alu_input2, alu_result;
     wire alu_branch;
+
+    // MULDIV_unit
+    wire [BIT_W-1:0] mul_result;
+    wire do_mul;
+    wire mul_done;
+
+    // ALU MUL
+    wire [BIT_W-1:0] alu_mul_result;
+
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -88,7 +97,11 @@ module CHIP #(                                                                  
     
     assign next_PC = (jal_signal | jalr_signal) ? pc_jump : pc_branch;
 
-    assign rd_data = mem_to_reg ? i_DMEM_rdata : alu_result;
+    // alu_mul_result
+    assign alu_mul_result = do_mul ? mul_result : alu_result;
+
+    // write back
+    assign rd_data = mem_to_reg ? i_DMEM_rdata : alu_mul_result;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Submoddules
@@ -131,6 +144,7 @@ module CHIP #(                                                                  
         .alu_op     (alu_op),
         .func3      (func3),
         .func7      (func7),
+        .do_mul     (do_mul),
         .alu_signal (alu_signal)  // signal to alu to tell which alu action to use
     );
 
@@ -149,6 +163,17 @@ module CHIP #(                                                                  
         .imm    (imm)
     );
 
+    // MULDIV_unit wire connection
+    MULDIV_unit muldiv0(
+        .i_clk  (i_clk),
+        .i_rst_n(i_rst_n),
+        .do_mul (do_mul),
+        .mul_input1 (alu_input1),
+        .mul_input2 (alu_input2),
+        .mul_result (mul_result),
+        .mul_done   (mul_done)
+    );
+
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Always Blocks
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -164,7 +189,7 @@ module CHIP #(                                                                  
                 PC <= PC;
             end
             else begin
-                if(i_DMEM_stall == 1'b1) begin
+                if(i_DMEM_stall == 1'b1 || mul_done == 1'b0) begin
                     PC <= PC;
                 end
                 else begin 
@@ -173,13 +198,13 @@ module CHIP #(                                                                  
             end
         end
         // // PC
-        // $display("PC = %h, next_PC = %h", PC, next_PC);
-        // $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
+        $display("PC = %h, next_PC = %h", PC, next_PC);
+        $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
         // // IMM
-        // $display("imm = %h", imm);
-        // $display("rs1 = %d, rs2 = %d, rd = %d", rs1, rs2, rd);
-        // $display("rs1_data = %d, rs2_data = %d, rd_data = %d", rs1_data, rs2_data, rd_data);
-        // $display("alu_input1 = %d, alu_input2 = %d, alu_result = %d", alu_input1, alu_input2, alu_result);
+        $display("imm = %h", imm);
+        $display("rs1 = %dh rs2 = %h, rd = %h", rs1, rs2, rd);
+        $display("rs1_data = %h, rs2_data = %h, rd_data = %h", rs1_data, rs2_data, rd_data);
+        $display("alu_input1 = %h, alu_input2 = %h, alu_result = %h", alu_input1, alu_input2, alu_result);
     end
     
 
@@ -252,6 +277,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm (4)
+                jal_signal = 0;
                 jalr_signal = 1;
                 alu_usePC = 1;
                 alu_op = ALUOP_ADD4;
@@ -432,10 +458,11 @@ endmodule
 
 
 
-module ALU_control (alu_op, func3, func7, alu_signal);
+module ALU_control (alu_op, func3, func7, do_mul, alu_signal);
     input  [2:0]        alu_op;
     input  [2:0]        func3;
     input  [6:0]        func7;
+    output reg          do_mul;
     output reg [3:0]    alu_signal; // signal to alu to tell which alu action to use
 
     // alu control input
@@ -461,23 +488,26 @@ module ALU_control (alu_op, func3, func7, alu_signal);
     localparam ALU_BLT = 4'b1001;
     localparam ALU_BGE = 4'b1010;
     localparam ALU_ADD4 = 4'b1011;
-    localparam ALU_MUL = 4'b1100;
     localparam ALU_DONOTHING = 4'b1111;
 
     always @(*) begin
        $display("ALU_control alu_op = %b, func3 = %b, func7 = %b", alu_op, func3, func7);
         case(alu_op)
             ALUOP_ADD: begin
+                do_mul = 0;
                 alu_signal = ALU_ADD; // instr: ld、sd、jalr。alu action is add
             end
             ALUOP_OPETATION: begin
                 if (func7[5]==1'b1) begin
+                    do_mul = 0;
                     alu_signal = ALU_SUB; // instr: R-type sub。alu action is sub
                 end
                 else if(func7[0]==1'b1) begin
-                    alu_signal = ALU_MUL; // instr: R-type ，alu action is MUL
+                    do_mul = 1;
+                    alu_signal = ALU_DONOTHING;
                 end
                 else begin
+                    do_mul = 0;
                     case(func3)
                     3'b000: alu_signal = ALU_ADD;
                     3'b110: alu_signal = ALU_OR;
@@ -487,6 +517,7 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                 end
             end
             ALUOP_IMM_OPETATION: begin
+                do_mul = 0;
                 case(func3)
                     3'b000: alu_signal = ALU_ADD;
                     3'b001: alu_signal = ALU_SLL;
@@ -496,6 +527,7 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                 endcase
             end
             ALUOP_BRANCH: begin
+                do_mul = 0;
                 case (func3)
                     3'b000: alu_signal = ALU_BEQ; // beq
                     3'b001: alu_signal = ALU_BNE; // bne
@@ -505,13 +537,15 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                 endcase
             end
             ALUOP_ADD4: begin
+                do_mul = 0;
                 alu_signal = ALU_ADD4;
             end
             default: begin
+                do_mul = 0;
                 alu_signal = ALU_DONOTHING; // JUST a default value
             end
         endcase
-        $display("ALU_control alu_signal = %b\n", alu_signal);
+        $display("ALU_control alu_signal = %h\n", alu_signal);
     end
 endmodule
 
@@ -538,7 +572,6 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
     localparam ALU_BLT = 4'b1001;
     localparam ALU_BGE = 4'b1010;
     localparam ALU_ADD4 = 4'b1011;
-    localparam ALU_MUL = 4'b1100;
     localparam ALU_DONOTHING = 4'b1111;
 
 
@@ -572,7 +605,7 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
             end
             ALU_SLT: begin
                 $display("ALU_SLT\n");
-                alu_result = (alu_input1 < alu_input2) ? 32'h1 : 32'h0;
+                alu_result = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0;
                 alu_branch = 1'b0;
             end
             ALU_SRA: begin
@@ -593,23 +626,23 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
             ALU_BLT: begin
                 $display("ALU_BLT\n");
                 alu_result = 1'b0;
-                alu_branch = (alu_input1 < alu_input2) ? 32'h1 : 32'h0; 
+                alu_branch = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_BGE: begin
                 $display("ALU_BGE\n");
                 alu_result = 1'b0;
-                alu_branch = (alu_input1 >= alu_input2) ? 32'h1 : 32'h0; 
+                alu_branch = ( $signed(alu_input1) >= $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_ADD4: begin
                 $display("ALU_ADD4\n");
                 alu_result = alu_input1 + 32'h4;
                 alu_branch = 1'b0;
             end
-            ALU_MUL: begin
-                $display("ALU_MUL\n");
-                alu_result = alu_input1 * alu_input2; // 暫時，之後要改成 MULDIV_unit
-                alu_branch = 1'b0;
-            end
+            // ALU_MUL: begin
+            //     $display("ALU_MUL\n");
+            //     alu_result = alu_input1 * alu_input2; // 暫時，之後要改成 MULDIV_unit
+            //     alu_branch = 1'b0;
+            // end
             default: begin
                 alu_result = 32'h0;
                 alu_branch = 1'b0;
@@ -664,10 +697,121 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
     end
 endmodule
 
-module MULDIV_unit(
-    // TODO: port declaration
-    );
-    // Todo: HW2
+module MULDIV_unit(i_clk, i_rst_n, do_mul, mul_input1, mul_input2, mul_result, mul_done);
+    localparam BITS = 32;
+    input i_clk, i_rst_n, do_mul;
+    input [BITS-1:0] mul_input1, mul_input2;
+    output [BITS-1:0] mul_result;
+    output reg mul_done;
+
+    // Definition of state
+    localparam IDLE = 2'b00;
+    localparam MUL  = 2'b01;
+    localparam OUT  = 2'b10;
+
+    // Todo: Wire and reg if needed
+    reg  [ 1:0] state, state_next;
+    reg  [ 4:0] counter, counter_next;
+    reg  [63:0] shreg, shreg_next;
+    reg  [31:0] alu_in, alu_in_next;
+    reg  [32:0] alu_out;
+    assign mul_result = shreg[31:0];
+    //FSM
+    //-------------------------------------------------------
+    always @(*) begin
+        case(state)
+            IDLE: begin
+                if (do_mul) begin
+                    state_next = MUL;
+                    counter_next = 0;
+                    mul_done = 0;
+                end
+                else begin
+                    state_next = IDLE;
+                    counter_next = 0;
+                    mul_done = 1;
+                end
+            end
+            MUL : begin 
+                if (counter == 5'd31) begin
+                    state_next = OUT;
+                    counter_next = counter + 1;
+                    mul_done = 0;
+                end
+                else begin
+                    state_next = MUL;
+                    counter_next = counter + 1;
+                    mul_done = 0;
+                end
+            end
+            OUT : begin
+                state_next = IDLE;
+                counter_next = 0;
+                mul_done = 1;
+            end
+            default : begin
+                state_next = OUT;
+                counter_next = 0;
+                mul_done = 1;
+        end
+        endcase
+    end
+    // load ALU input
+    //-----------------------------------------------------
+    always @(*) begin
+    case(state)
+    IDLE: begin           
+        if (do_mul)  alu_in_next = mul_input2;
+        else alu_in_next = 0;
+    end
+    MUL:alu_in_next = alu_in;
+    OUT : alu_in_next = 0;
+    default: alu_in_next = alu_in;
+    endcase
+    end
+
+    //shift register
+    //-----------------------------------------------------------
+    always @(*) begin
+    case(state)
+    IDLE: begin
+        if (do_mul)  shreg_next = {32'b0,mul_input1};
+        else shreg_next = 0;
+    end
+
+    MUL:    shreg_next = {alu_out,shreg[31:1]};
+
+    OUT:    shreg_next = 64'b0;
+    default: shreg_next = 64'b0;
+
+    endcase
+    end
+    // ALU output
+    //------------------------------------------------------
+    always @(*) begin
+        if(state == MUL) begin
+            if(shreg[0] == 1) alu_out = shreg[63:32] + alu_in;
+            else alu_out=shreg[63:32];
+        end
+        else alu_out = 0;
+    end
+
+    //pipeline
+    //--------------------------------------------------------------------
+    always @(posedge i_clk or negedge i_rst_n) begin
+    if (!i_rst_n) begin
+        alu_in <= 0;
+        counter <= 0;
+        shreg <= 0;
+        state <= IDLE;
+    end
+    else begin 
+        alu_in <= alu_in_next;
+        counter <= counter_next;
+        shreg <= shreg_next;
+        state <= state_next;
+    end
+    end
 endmodule
 
 module Cache#(
@@ -692,9 +836,9 @@ module Cache#(
             output [BIT_W*4-1:0]  o_mem_wdata,
             input [BIT_W*4-1:0] i_mem_rdata,
             input i_mem_stall,
-            output o_cache_available
+            output o_cache_available,
         // others
-        // input  [ADDR_W-1: 0] i_offset
+           input  [ADDR_W-1: 0] i_offset
     );
 
     assign o_cache_available = 0; // change this value to 1 if the cache is implemented
