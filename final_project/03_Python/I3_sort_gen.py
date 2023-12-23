@@ -12,7 +12,7 @@ def sort(v, n):
 if __name__ == '__main__':
     # Modify your test pattern here
     n = 7
-    v = np.linspace(-3, 3, 7, dtype=int)
+    v = [9, 7, 3, 1, 5, 8, 0]
     # print(v)
 
     with open('../00_TB/Pattern/I3/mem_D.dat', 'w') as f_data:
