@@ -239,7 +239,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
 
 
     always @(*) begin
-        $display("Control opcode = %b", opcode);
+        //$display("Control opcode = %b", opcode);
         case(opcode)
             AUIPC: begin // reg[rd] = pc + {imm, 12'b0};
                 o_finish = 0;
