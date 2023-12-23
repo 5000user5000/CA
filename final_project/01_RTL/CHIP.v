@@ -198,13 +198,13 @@ module CHIP #(                                                                  
             end
         end
         // // PC
-        $display("PC = %h, next_PC = %h", PC, next_PC);
-        $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
+        // $display("PC = %h, next_PC = %h", PC, next_PC);
+        // $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
         // // IMM
-        $display("imm = %h", imm);
-        $display("rs1 = %dh rs2 = %h, rd = %h", rs1, rs2, rd);
-        $display("rs1_data = %h, rs2_data = %h, rd_data = %h", rs1_data, rs2_data, rd_data);
-        $display("alu_input1 = %h, alu_input2 = %h, alu_result = %h", alu_input1, alu_input2, alu_result);
+        // $display("imm = %h", imm);
+        // $display("rs1 = %dh rs2 = %h, rd = %h", rs1, rs2, rd);
+        // $display("rs1_data = %h, rs2_data = %h, rd_data = %h", rs1_data, rs2_data, rd_data);
+        // $display("alu_input1 = %h, alu_input2 = %h, alu_result = %h", alu_input1, alu_input2, alu_result);
     end
     
 
@@ -253,7 +253,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 1;
                 alu_op = ALUOP_ADD;
-                $display("AUIPC\n");
+                //$display("AUIPC\n");
             end
             JAL: begin // reg[rd] = pc + 4; pc = pc + {imm, 12'b0};
                 o_finish = 0;
@@ -267,7 +267,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 1;
                 alu_op = ALUOP_ADD4;
-                $display("JAL\n");
+                //$display("JAL\n");
             end
             JALR: begin // reg[rd] = pc + 4; pc = reg[rs1] + {imm, 12'b0};
                 o_finish = 0;
@@ -281,7 +281,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 1;
                 alu_usePC = 1;
                 alu_op = ALUOP_ADD4;
-                $display("JALR\n");
+                //$display("JALR\n");
             end
             BRANCH: begin 
                 o_finish = 0;
@@ -295,7 +295,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_BRANCH;
-                $display("BRANCH\n");
+                //$display("BRANCH\n");
             end
             LOAD: begin // reg[rd] = M[reg[rs1] + imm];
                 o_finish = 0;
@@ -309,7 +309,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_ADD;
-                $display("LOAD\n");
+                //$display("LOAD\n");
             end
             STORE: begin // M[reg[rs1] + imm] = reg[rs2];
                 o_finish = 0;
@@ -323,7 +323,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_ADD;
-                $display("STORE\n");
+                //$display("STORE\n");
             end
             OPERATION_IMM: begin
                 o_finish = 0;
@@ -337,7 +337,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_IMM_OPETATION;
-                $display("OP_IMM\n");
+                //$display("OP_IMM\n");
             end
             OPERATION: begin
                 o_finish = 0;
@@ -351,7 +351,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_OPETATION; 
-                $display("OP\n");
+                //$display("OP\n");
             end
             ECALL: begin
                 o_finish = 1; // finish program
@@ -365,7 +365,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_ECALL;
-                $display("ECALL\n");
+                //$display("ECALL\n");
             end
             default: begin
                 o_finish = 0;
@@ -379,7 +379,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 jalr_signal = 0;
                 alu_usePC = 0;
                 alu_op = ALUOP_DONOTHING;
-                $display("default do nothing\n");
+                //$display("default do nothing\n");
             end
         endcase
     end
@@ -491,7 +491,7 @@ module ALU_control (alu_op, func3, func7, do_mul, alu_signal);
     localparam ALU_DONOTHING = 4'b1111;
 
     always @(*) begin
-       $display("ALU_control alu_op = %b, func3 = %b, func7 = %b", alu_op, func3, func7);
+       //$display("ALU_control alu_op = %b, func3 = %b, func7 = %b", alu_op, func3, func7);
         case(alu_op)
             ALUOP_ADD: begin
                 do_mul = 0;
@@ -545,7 +545,7 @@ module ALU_control (alu_op, func3, func7, do_mul, alu_signal);
                 alu_signal = ALU_DONOTHING; // JUST a default value
             end
         endcase
-        $display("ALU_control alu_signal = %h\n", alu_signal);
+        //$display("ALU_control alu_signal = %h\n", alu_signal);
     end
 endmodule
 
@@ -576,65 +576,65 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
 
 
     always @(*) begin
-        $display("alu_input1 = %d, alu_input2 = %d\n", alu_input1, alu_input2);
+        //$display("alu_input1 = %d, alu_input2 = %d\n", alu_input1, alu_input2);
         case(alu_signal)
             ALU_AND: begin
-                $display("ALU_AND\n");
+                //$display("ALU_AND\n");
                 alu_result = alu_input1 & alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_OR: begin
-                $display("ALU_OR\n");
+                //$display("ALU_OR\n");
                 alu_result = alu_input1 | alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_ADD: begin
-                $display("ALU_ADD\n");
+                //$display("ALU_ADD\n");
                 alu_result = alu_input1 + alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_SUB: begin
-                $display("ALU_SUB\n");
+                //$display("ALU_SUB\n");
                 alu_result = alu_input1 - alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_SLL: begin
-                $display("ALU_SLL\n");
+                //$display("ALU_SLL\n");
                 alu_result = alu_input1 << alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_SLT: begin
-                $display("ALU_SLT\n");
+                //$display("ALU_SLT\n");
                 alu_result = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0;
                 alu_branch = 1'b0;
             end
             ALU_SRA: begin
-                $display("ALU_SRA\n");
+                //$display("ALU_SRA\n");
                 alu_result = alu_input1 >>> alu_input2;
                 alu_branch = 1'b0;
             end
             ALU_BEQ: begin
-                $display("ALU_BEQ\n");
+                //$display("ALU_BEQ\n");
                 alu_result = 1'b0;
                 alu_branch = (alu_input1 == alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_BNE: begin
-                $display("ALU_BNE\n");
+                //$display("ALU_BNE\n");
                 alu_result = 1'b0;
                 alu_branch = (alu_input1 != alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_BLT: begin
-                $display("ALU_BLT\n");
+                //$display("ALU_BLT\n");
                 alu_result = 1'b0;
                 alu_branch = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_BGE: begin
-                $display("ALU_BGE\n");
+                //$display("ALU_BGE\n");
                 alu_result = 1'b0;
                 alu_branch = ( $signed(alu_input1) >= $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_ADD4: begin
-                $display("ALU_ADD4\n");
+                //$display("ALU_ADD4\n");
                 alu_result = alu_input1 + 32'h4;
                 alu_branch = 1'b0;
             end
@@ -648,7 +648,7 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
                 alu_branch = 1'b0;
             end
         endcase
-        $display("ALU alu_result = %d, alu_branch = %d\n", alu_result, alu_branch);
+        //$display("ALU alu_result = %d, alu_branch = %d\n", alu_result, alu_branch);
     end
 endmodule
 
