@@ -198,13 +198,13 @@ module CHIP #(                                                                  
             end
         end
         // // PC
-        // $display("PC = %h, next_PC = %h", PC, next_PC);
-        // $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
+        $display("PC = %h, next_PC = %h", PC, next_PC);
+        $display("pc_4 = %h, pc_imm = %h, pc_branch = %h, pc_rs1 = %h, pc_jump = %h", pc_4, pc_imm, pc_branch, pc_rs1, pc_jump);
         // // IMM
-        // $display("imm = %h", imm);
-        // $display("rs1 = %d, rs2 = %d, rd = %d", rs1, rs2, rd);
-        // $display("rs1_data = %d, rs2_data = %d, rd_data = %d", rs1_data, rs2_data, rd_data);
-        // $display("alu_input1 = %d, alu_input2 = %d, alu_result = %d", alu_input1, alu_input2, alu_result);
+        $display("imm = %h", imm);
+        $display("rs1 = %dh rs2 = %h, rd = %h", rs1, rs2, rd);
+        $display("rs1_data = %h, rs2_data = %h, rd_data = %h", rs1_data, rs2_data, rd_data);
+        $display("alu_input1 = %h, alu_input2 = %h, alu_result = %h", alu_input1, alu_input2, alu_result);
     end
     
 
@@ -277,6 +277,7 @@ module Control (opcode, o_finish, branch, mem_read, mem_write, reg_write, mem_to
                 reg_write = 1; // need to write rd
                 mem_to_reg = 0;
                 alu_src = 1; // need to use imm (4)
+                jal_signal = 0;
                 jalr_signal = 1;
                 alu_usePC = 1;
                 alu_op = ALUOP_ADD4;
@@ -544,7 +545,7 @@ module ALU_control (alu_op, func3, func7, do_mul, alu_signal);
                 alu_signal = ALU_DONOTHING; // JUST a default value
             end
         endcase
-        $display("ALU_control alu_signal = %b\n", alu_signal);
+        $display("ALU_control alu_signal = %h\n", alu_signal);
     end
 endmodule
 
@@ -604,7 +605,7 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
             end
             ALU_SLT: begin
                 $display("ALU_SLT\n");
-                alu_result = (alu_input1 < alu_input2) ? 32'h1 : 32'h0;
+                alu_result = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0;
                 alu_branch = 1'b0;
             end
             ALU_SRA: begin
@@ -625,12 +626,12 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
             ALU_BLT: begin
                 $display("ALU_BLT\n");
                 alu_result = 1'b0;
-                alu_branch = (alu_input1 < alu_input2) ? 32'h1 : 32'h0; 
+                alu_branch = ($signed(alu_input1) < $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_BGE: begin
                 $display("ALU_BGE\n");
                 alu_result = 1'b0;
-                alu_branch = (alu_input1 >= alu_input2) ? 32'h1 : 32'h0; 
+                alu_branch = ( $signed(alu_input1) >= $signed(alu_input2)) ? 32'h1 : 32'h0; 
             end
             ALU_ADD4: begin
                 $display("ALU_ADD4\n");
@@ -835,9 +836,9 @@ module Cache#(
             output [BIT_W*4-1:0]  o_mem_wdata,
             input [BIT_W*4-1:0] i_mem_rdata,
             input i_mem_stall,
-            output o_cache_available
+            output o_cache_available,
         // others
-        // input  [ADDR_W-1: 0] i_offset
+           input  [ADDR_W-1: 0] i_offset
     );
 
     assign o_cache_available = 0; // change this value to 1 if the cache is implemented
