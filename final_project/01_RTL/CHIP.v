@@ -164,7 +164,12 @@ module CHIP #(                                                                  
                 PC <= PC;
             end
             else begin
-                PC <= next_PC;
+                if(i_DMEM_stall == 1'b1) begin
+                    PC <= PC;
+                end
+                else begin 
+                    PC <= next_PC;
+                end
             end
         end
         // // PC
@@ -389,10 +394,15 @@ module Imm_Gen (inst, imm);
                 // $display("JALR imm = %d\n", imm);
             end
             BRANCH: begin 
-                imm = {19'b0, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
+                if(inst[31] == 1'b0) begin
+                    imm = {{19{1'b0}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
+                end
+                else begin
+                    imm = {{19{1'b1}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0}; // 2's complement
+                end
                 // $display("BRANCH imm = %d\n", imm);
             end
-            LOAD: begin 
+            LOAD: begin
                 imm = {20'b0, inst[31:20]};
                 // $display("LOAD imm = %d\n", imm);
             end
@@ -401,7 +411,12 @@ module Imm_Gen (inst, imm);
                 // $display("STORE imm = %d\n", imm);
             end
             OPERATION_IMM: begin
-                imm = {20'b0, inst[31:20]};
+                if(inst[31] == 1'b0) begin
+                    imm = {{20{1'b0}}, inst[31:20]};
+                end
+                else begin
+                    imm = {{20{1'b1}}, inst[31:20]}; // 2's complement
+                end
                 // $display("OP_IMM imm = %d\n", imm);
             end
             default: begin
@@ -439,16 +454,14 @@ module ALU_control (alu_op, func3, func7, alu_signal);
     localparam ALU_ADD = 4'b0010;
     localparam ALU_SUB = 4'b0011;
     localparam ALU_SLL = 4'b0100;
-    localparam ALU_NOR = 4'b0101;
-    localparam ALU_XOR = 4'b0110;
-    localparam ALU_SRL = 4'b0111;
-    localparam ALU_SLT = 4'b1000;
-    localparam ALU_BEQ = 4'b1001;
-    localparam ALU_BNE = 4'b1010;
-    localparam ALU_BLT = 4'b1011;
-    localparam ALU_BGE = 4'b1100;
-    localparam ALU_ADD4 = 4'b1101;
-    localparam ALU_MUL = 4'b1110;
+    localparam ALU_SLT = 4'b0101;
+    localparam ALU_SRA = 4'b0110;
+    localparam ALU_BEQ = 4'b0111;
+    localparam ALU_BNE = 4'b1000;
+    localparam ALU_BLT = 4'b1001;
+    localparam ALU_BGE = 4'b1010;
+    localparam ALU_ADD4 = 4'b1011;
+    localparam ALU_MUL = 4'b1100;
     localparam ALU_DONOTHING = 4'b1111;
 
     always @(*) begin
@@ -458,7 +471,7 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                 alu_signal = ALU_ADD; // instr: ld、sd、jalr。alu action is add
             end
             ALUOP_OPETATION: begin
-                if (func7[6]==1'b1) begin
+                if (func7[5]==1'b1) begin
                     alu_signal = ALU_SUB; // instr: R-type sub。alu action is sub
                 end
                 else if(func7[0]==1'b1) begin
@@ -467,11 +480,6 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                 else begin
                     case(func3)
                     3'b000: alu_signal = ALU_ADD;
-                    3'b001: alu_signal = ALU_SLL;
-                    3'b010: alu_signal = ALU_SLT;
-                    3'b011: alu_signal = ALU_SLT; // sltu
-                    3'b100: alu_signal = ALU_XOR;
-                    3'b101: alu_signal = ALU_SRL;
                     3'b110: alu_signal = ALU_OR;
                     3'b111: alu_signal = ALU_AND;
                     default: alu_signal = ALU_DONOTHING;
@@ -483,11 +491,7 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                     3'b000: alu_signal = ALU_ADD;
                     3'b001: alu_signal = ALU_SLL;
                     3'b010: alu_signal = ALU_SLT;
-                    3'b011: alu_signal = ALU_SLT; // sltu
-                    3'b100: alu_signal = ALU_XOR;
-                    3'b101: alu_signal = ALU_SRL;
-                    3'b110: alu_signal = ALU_OR;
-                    3'b111: alu_signal = ALU_AND;
+                    3'b101: alu_signal = ALU_SRA;
                     default: alu_signal = ALU_DONOTHING;
                 endcase
             end
@@ -497,16 +501,11 @@ module ALU_control (alu_op, func3, func7, alu_signal);
                     3'b001: alu_signal = ALU_BNE; // bne
                     3'b100: alu_signal = ALU_BLT; // blt
                     3'b101: alu_signal = ALU_BGE; // bge
-                    // 3'b110: alu_signal = ALU_SLT; // bltu，not used
-                    // 3'b111: alu_signal = ALU_SRL; // bgeu
                     default: alu_signal = ALU_DONOTHING;
                 endcase
             end
             ALUOP_ADD4: begin
                 alu_signal = ALU_ADD4;
-            end
-            ALUOP_ECALL: begin
-                alu_signal = ALU_DONOTHING; // instr: ecall。default alu action is do nothing
             end
             default: begin
                 alu_signal = ALU_DONOTHING; // JUST a default value
@@ -532,100 +531,88 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
     localparam ALU_ADD = 4'b0010;
     localparam ALU_SUB = 4'b0011;
     localparam ALU_SLL = 4'b0100;
-    localparam ALU_NOR = 4'b0101;
-    localparam ALU_XOR = 4'b0110;
-    localparam ALU_SRL = 4'b0111;
-    localparam ALU_SLT = 4'b1000;
-    localparam ALU_BEQ = 4'b1001;
-    localparam ALU_BNE = 4'b1010;
-    localparam ALU_BLT = 4'b1011;
-    localparam ALU_BGE = 4'b1100;
-    localparam ALU_ADD4 = 4'b1101;
-    localparam ALU_MUL = 4'b1110;
+    localparam ALU_SLT = 4'b0101;
+    localparam ALU_SRA = 4'b0110;
+    localparam ALU_BEQ = 4'b0111;
+    localparam ALU_BNE = 4'b1000;
+    localparam ALU_BLT = 4'b1001;
+    localparam ALU_BGE = 4'b1010;
+    localparam ALU_ADD4 = 4'b1011;
+    localparam ALU_MUL = 4'b1100;
     localparam ALU_DONOTHING = 4'b1111;
 
 
     always @(*) begin
         $display("alu_input1 = %d, alu_input2 = %d\n", alu_input1, alu_input2);
         case(alu_signal)
-            ALU_ADD: begin
-                $display("ALU_ADD\n");
-                alu_result = alu_input1 + alu_input2; // 先不想overflow的問題
-                alu_branch = 0;
-            end
-            ALU_SUB: begin
-                $display("ALU_SUB\n");
-                alu_result = alu_input1 - alu_input2;
-                alu_branch = 0;
-            end
             ALU_AND: begin
                 $display("ALU_AND\n");
                 alu_result = alu_input1 & alu_input2;
-                alu_branch = 0;
+                alu_branch = 1'b0;
             end
             ALU_OR: begin
                 $display("ALU_OR\n");
                 alu_result = alu_input1 | alu_input2;
-                alu_branch = 0;
+                alu_branch = 1'b0;
             end
-            ALU_XOR: begin
-                $display("ALU_XOR\n");
-                alu_result = alu_input1 ^ alu_input2;
-                alu_branch = 0;
+            ALU_ADD: begin
+                $display("ALU_ADD\n");
+                alu_result = alu_input1 + alu_input2;
+                alu_branch = 1'b0;
+            end
+            ALU_SUB: begin
+                $display("ALU_SUB\n");
+                alu_result = alu_input1 - alu_input2;
+                alu_branch = 1'b0;
             end
             ALU_SLL: begin
                 $display("ALU_SLL\n");
                 alu_result = alu_input1 << alu_input2;
-                alu_branch = 0;
-            end
-            ALU_SRL: begin
-                $display("ALU_SRL\n");
-                alu_result = alu_input1 >> alu_input2;
-                alu_branch = 0;
+                alu_branch = 1'b0;
             end
             ALU_SLT: begin
                 $display("ALU_SLT\n");
-                alu_result = (alu_input1 < alu_input2) ? 1 : 0;
-                alu_branch = 0;
+                alu_result = (alu_input1 < alu_input2) ? 32'h1 : 32'h0;
+                alu_branch = 1'b0;
             end
-            ALU_NOR: begin
-                $display("ALU_NOR\n");
-                alu_result = ~(alu_input1 | alu_input2);
-                alu_branch = 0;
+            ALU_SRA: begin
+                $display("ALU_SRA\n");
+                alu_result = alu_input1 >>> alu_input2;
+                alu_branch = 1'b0;
             end
             ALU_BEQ: begin
                 $display("ALU_BEQ\n");
-                alu_result = 0;
-                alu_branch = (alu_input1 == alu_input2) ? 1 : 0; 
+                alu_result = 1'b0;
+                alu_branch = (alu_input1 == alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_BNE: begin
                 $display("ALU_BNE\n");
-                alu_result = 0;
-                alu_branch = (alu_input1 != alu_input2) ? 1 : 0; 
+                alu_result = 1'b0;
+                alu_branch = (alu_input1 != alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_BLT: begin
                 $display("ALU_BLT\n");
-                alu_result = 0;
-                alu_branch = (alu_input1 < alu_input2) ? 1 : 0; 
+                alu_result = 1'b0;
+                alu_branch = (alu_input1 < alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_BGE: begin
                 $display("ALU_BGE\n");
-                alu_result = 0;
-                alu_branch = (alu_input1 >= alu_input2) ? 1 : 0; 
+                alu_result = 1'b0;
+                alu_branch = (alu_input1 >= alu_input2) ? 32'h1 : 32'h0; 
             end
             ALU_ADD4: begin
                 $display("ALU_ADD4\n");
-                alu_result = alu_input1 + 4;
-                alu_branch = 0;
+                alu_result = alu_input1 + 32'h4;
+                alu_branch = 1'b0;
             end
             ALU_MUL: begin
                 $display("ALU_MUL\n");
                 alu_result = alu_input1 * alu_input2; // 暫時，之後要改成 MULDIV_unit
-                alu_branch = 0;
+                alu_branch = 1'b0;
             end
             default: begin
-                alu_result = 0;
-                alu_branch = 0;
+                alu_result = 32'h0;
+                alu_branch = 1'b0;
             end
         endcase
         $display("ALU alu_result = %d, alu_branch = %d\n", alu_result, alu_branch);
@@ -654,7 +641,6 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
 
 
     always @(*) begin
-        //$display("      rs1 = %d, rs2 = %d, rdata1 = %d, rdata2 = %d \n", rs1, rs2, rdata1, rdata2);
         for (i=0; i<word_depth; i=i+1)
             mem_nxt[i] = (wen && (rd == i)) ? wdata : mem[i];
     end
