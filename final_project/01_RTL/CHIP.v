@@ -610,7 +610,7 @@ module ALU (alu_input1, alu_input2, alu_signal, alu_result, alu_branch);
             end
             ALU_SRA: begin
                 //$display("ALU_SRA\n");
-                alu_result = alu_input1 >>> alu_input2;
+                alu_result = $signed(alu_input1) >>> alu_input2; //得特別標signed()，不然會被當成unsigned
                 alu_branch = 1'b0;
             end
             ALU_BEQ: begin
