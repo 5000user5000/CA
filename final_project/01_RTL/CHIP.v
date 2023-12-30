@@ -437,11 +437,11 @@ module Imm_Gen (inst, imm);
                 // $display("STORE imm = %d\n", imm);
             end
             OPERATION_IMM: begin
-                if(inst[31] == 1'b0) begin
-                    imm = {{20{1'b0}}, inst[31:20]};
+                if(inst[14:12]== 3'b101 | inst[14:12]== 3'b001) begin // srai、srli or slli
+                    imm = { {27{inst[31]}}, inst[24:20]};
                 end
                 else begin
-                    imm = {{20{1'b1}}, inst[31:20]}; // 2's complement
+                    imm = { {20{inst[31]}}, inst[31:20]}; // 2's complement
                 end
                 // $display("OP_IMM imm = %d\n", imm);
             end
